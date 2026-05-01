@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts'
 import { questions } from './questions'
+import { useEmotionEngine } from './hooks/useEmotionEngine'
 import './App.css'
 
 function formatTime(seconds) {
@@ -47,6 +48,23 @@ export default function App() {
   useEffect(() => { blinkCountRef.current = blinkCount }, [blinkCount])
 
   const currentQuestion = questions[questionIndex]
+
+  const [endingSession, setEndingSession] = useState(false)
+
+  const {
+    tier1Ready,
+    tier2Ready,
+    tier2StartOffsetMs,
+    startSession,
+    endSession,
+    resetEngine,
+    signalEventsRef,
+  } = useEmotionEngine({
+    streamRef,
+    audioLevelRef,
+    canvasRef,
+    currentQuestionTitle: currentQuestion.title,
+  })
 
   useEffect(() => {
     let animId
@@ -242,15 +260,23 @@ export default function App() {
 
 
   function handleStartInterview() {
-    if (startingRef.current || !cameraReady) return
+    if (startingRef.current || !cameraReady || !tier1Ready) return
     startingRef.current = true
+
+    const sessionStartTime = performance.now()
+    startSession(sessionStartTime)
+
     setCalibPhase('calibrating')
     calibPhaseRef.current = 'calibrating'
     calibStartRef.current = Date.now()
     setPhase('CALIBRATING')
   }
 
-  function handleEndSession() {
+  async function handleEndSession() {
+    setEndingSession(true)
+    await endSession()
+    setEndingSession(false)
+
     const data = sessionDataRef.current
     if (data.length === 0) {
       setReportData({ empty: true })
@@ -261,12 +287,18 @@ export default function App() {
       const peakTime = peakEntry?.time ?? '--:--'
       const totalBlinks = blinkCountRef.current
       const duration = formatTime(sessionTimeRef.current)
-      setReportData({ avgStress, peakStress, peakTime, totalBlinks, duration, sessionData: [...data] })
+      setReportData({
+        avgStress, peakStress, peakTime, totalBlinks, duration,
+        sessionData: [...data],
+        signalEvents: [...signalEventsRef.current],
+        tier2StartOffsetMs,
+      })
     }
     setPhase('REPORT')
   }
 
-  function handleNewSession() {
+  async function handleNewSession() {
+    await resetEngine()
     sessionDataRef.current = []
     sessionTimeRef.current = 0
     stressRef.current = 0
@@ -308,8 +340,8 @@ export default function App() {
             <span>Blinks: <b style={{ color: '#fff' }}>{blinkCount}</b></span>
             <span>Stress: <b style={{ color: borderColor }}>{Math.round(stressScore)}%</b></span>
             <span style={{ color: '#888', fontVariantNumeric: 'tabular-nums' }}>{formatTime(sessionTime)}</span>
-            <button onClick={handleEndSession} tabIndex={-1} style={{ padding: '4px 12px', fontSize: 11, background: '#1a0000', color: '#ef4444', border: '1px solid #ef4444', borderRadius: 6, cursor: 'pointer' }}>
-              End Session
+            <button onClick={handleEndSession} disabled={endingSession} tabIndex={-1} style={{ padding: '4px 12px', fontSize: 11, background: '#1a0000', color: '#ef4444', border: '1px solid #ef4444', borderRadius: 6, cursor: endingSession ? 'not-allowed' : 'pointer' }}>
+              {endingSession ? 'Processing…' : 'End Session'}
             </button>
           </>}
           {phase === 'LOBBY' && <span style={{ color: cameraReady ? '#22c55e' : '#888' }}>● {cameraReady ? 'Camera ready' : 'Loading camera...'}</span>}
@@ -331,9 +363,9 @@ export default function App() {
             {cameraError && (
               <div style={{ background: '#1a0000', border: '1px solid #ef4444', borderRadius: 8, padding: 12, fontSize: 12, color: '#ef4444' }}>{cameraError}</div>
             )}
-            <button onClick={handleStartInterview} disabled={!cameraReady || !!cameraError}
-              style={{ padding: '14px 0', fontSize: 15, fontWeight: 600, background: cameraReady && !cameraError ? '#0D2E1A' : '#111', color: cameraReady && !cameraError ? '#22c55e' : '#555', border: `1.5px solid ${cameraReady && !cameraError ? '#22c55e' : '#333'}`, borderRadius: 8, cursor: cameraReady && !cameraError ? 'pointer' : 'not-allowed' }}>
-              {cameraReady ? 'Start Interview' : 'Loading camera...'}
+            <button onClick={handleStartInterview} disabled={!cameraReady || !!cameraError || !tier1Ready}
+              style={{ padding: '14px 0', fontSize: 15, fontWeight: 600, background: cameraReady && !cameraError && tier1Ready ? '#0D2E1A' : '#111', color: cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#555', border: `1.5px solid ${cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#333'}`, borderRadius: 8, cursor: cameraReady && !cameraError && tier1Ready ? 'pointer' : 'not-allowed' }}>
+              {!cameraReady ? 'Loading camera...' : !tier1Ready ? 'Preparing AI models...' : 'Start Interview'}
             </button>
             <p style={{ fontSize: 11, color: '#555', textAlign: 'center', margin: 0 }}>A 10-second calibration will run first</p>
             <button onClick={handleNextQuestion} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: 12, cursor: 'pointer', textAlign: 'right', padding: 0 }}>
