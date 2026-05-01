@@ -52,6 +52,7 @@ async function handleLoadModels() {
 }
 
 function handleStartSession({ sessionStartTime: t }) {
+  sequenceNum = 0
   sessionStartTime = t
   console.log('[AggregatorWorker] ARMED — sessionStartTime:', t)
 }
@@ -99,11 +100,12 @@ async function handleFrameData(data) {
     }
 
     // Guard G4: dev-only monotonicity assertion
-    if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && buffer.length > 0) {
+    if (import.meta.env?.DEV && buffer.length > 0) {
       const prev = buffer[buffer.length - 1]
-      if (tickNow < prev.rawTimestamp) {
-        console.error('[AggregatorWorker] Monotonicity violated:', tickNow, '<', prev.rawTimestamp)
-      }
+      console.assert(
+        tickNow >= prev.rawTimestamp,
+        '[AggregatorWorker] G4 monotonicity violated: %d < %d', tickNow, prev.rawTimestamp
+      )
     }
 
     buffer.push(event)
@@ -112,7 +114,7 @@ async function handleFrameData(data) {
     runFinalizationPass(tickNow)
 
   } finally {
-    data.frame?.close()
+    data.frame?.close()   // early-exit guards also close frame on their paths; this covers the normal path
     inferenceInFlight = false
   }
 }
