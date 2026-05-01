@@ -54,14 +54,13 @@ async function handleFrameData(data) {
   if (!fer || !sessionStartTime) { data.frame?.close(); return }
 
   inferenceInFlight = true
-  const tickNow = data.rawTimestamp   // Guard G2: single clock per tick
+  const tickNow = data.rawTimestamp   // Guard G2: single clock per tick — used in Task 7 tick cycle
 
   try {
     // Convert ImageBitmap → ImageData via OffscreenCanvas for pipeline input
     const canvas = new OffscreenCanvas(data.frame.width, data.frame.height)
     const ctx = canvas.getContext('2d')
     ctx.drawImage(data.frame, 0, 0)
-    data.frame.close()
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
 
     const results = await fer(imageData)
@@ -69,6 +68,7 @@ async function handleFrameData(data) {
 
     console.log('[AggregatorWorker] FER:', ferVector)
   } finally {
+    data.frame?.close()
     inferenceInFlight = false
   }
 }
@@ -84,6 +84,7 @@ function handleEndSession() {
 }
 
 function handleReset() {
+  inferenceInFlight = false
   sessionStartTime = null
   console.log('[AggregatorWorker] RESET')
 }
