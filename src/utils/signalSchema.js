@@ -1,5 +1,6 @@
 /**
  * Strips the raw FER/audio layer and context.text from a full SignalEvent.
+ * `finalized` is excluded — it is always `true` at the point of UI consumption and is an internal pipeline concept.
  * Use this when binding events to UI components (Sub-projects B and C).
  * Full-fidelity stream remains available via signalEventsRef for research export.
  *
