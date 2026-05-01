@@ -7,31 +7,27 @@ const FLUSH_DURATION_S = 4
 class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super()
-    this._buffer = []
-    this._flushFrames = Math.round(FLUSH_DURATION_S * sampleRate)  // sampleRate is a global in AudioWorklet
-    this._frameCount = 0
-    this.port.onmessage = () => {}   // unused; flush is time-driven
+    this._flushFrames = Math.round(FLUSH_DURATION_S * sampleRate)
+    this._buffer = new Float32Array(this._flushFrames)
+    this._writePos = 0
+    this.port.onmessage = () => {}
   }
 
   process(inputs) {
     const input = inputs[0]
     if (!input || input.length === 0) return true
 
-    // Take channel 0 only (mono)
     const channelData = input[0]
-    for (let i = 0; i < channelData.length; i++) {
-      this._buffer.push(channelData[i])
-    }
-    this._frameCount += channelData.length
+    this._buffer.set(channelData, this._writePos)
+    this._writePos += channelData.length
 
-    if (this._frameCount >= this._flushFrames) {
-      const pcm = new Float32Array(this._buffer)
+    if (this._writePos >= this._flushFrames) {
+      const pcm = this._buffer.slice(0, this._writePos)
       this.port.postMessage({ type: 'PCM_FLUSH', pcm, sampleRate }, [pcm.buffer])
-      this._buffer = []
-      this._frameCount = 0
+      this._writePos = 0
     }
 
-    return true   // keep processor alive
+    return true
   }
 }
 

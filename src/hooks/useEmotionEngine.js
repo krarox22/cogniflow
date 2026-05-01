@@ -121,6 +121,9 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       // workletNode intentionally not connected to audioCtx.destination — capture only, not playback
     } catch (err) {
       console.warn('[useEmotionEngine] AudioWorklet setup failed:', err)
+      audioCtx?.close()
+      audioContextRef.current = null
+      audioWorkletNodeRef.current = null
     }
   }
 
@@ -138,7 +141,9 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     }
 
     startFrameCapture()
-    setupAudioWorklet()
+    // Intentionally not awaited — AudioWorklet setup is best-effort and must
+    // not block session start. Failures are caught inside setupAudioWorklet().
+    void setupAudioWorklet()
   }
 
   function startFrameCapture() {
