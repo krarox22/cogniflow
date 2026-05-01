@@ -148,7 +148,13 @@ function handleTranscriptChunk({ start, end, topic, text, disfluency }) {
 }
 
 function handleEndSession() {
-  // Flush implemented in Task 12
+  // Finalize ALL remaining buffer events regardless of age (BUFFER_WINDOW_MS lifted)
+  for (const event of buffer) {
+    event.finalized = true
+    const { rawTimestamp, ...emittable } = event
+    self.postMessage({ type: 'SIGNAL_EVENT', event: emittable })
+  }
+  buffer = []
   self.postMessage({ type: 'FLUSH_COMPLETE', source: 'tier1' })
 }
 
