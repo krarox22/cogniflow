@@ -34,6 +34,9 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     tier2.onmessage = handleTier2Message
     tier2.postMessage({ type: 'LOAD_MODELS' })
 
+    // handleAggregatorMessage and handleTier2Message are bound once at mount.
+    // Safe because all captured values are stable refs or React state setters.
+
     return () => {
       aggregator.terminate()
       tier2.terminate()
@@ -88,6 +91,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   }
 
   function startFrameCapture() {
+    if (frameIntervalRef.current) clearInterval(frameIntervalRef.current)
     frameIntervalRef.current = setInterval(async () => {
       if (!canvasRef.current || !sessionStartTimeRef.current) return
       try {
@@ -113,6 +117,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   async function endSession() {
     if (endingRef.current) return endingPromiseRef.current
     endingRef.current = true
+    pendingTier2StartRef.current = null   // cancel any deferred Tier 2 start
 
     clearInterval(frameIntervalRef.current)
     clearInterval(audioFlushIntervalRef.current)
