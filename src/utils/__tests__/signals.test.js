@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { computeFacialTension, updateCadenceState, updateFreezeCount, computeDisfluency } from '../signals.js'
+import { clamp, computeFacialTension, updateCadenceState, updateFreezeCount, computeDisfluency } from '../signals.js'
+
+describe('clamp', () => {
+  it('clamps values above max to max', () => {
+    expect(clamp(1.5, 0, 1)).toBe(1)
+  })
+  it('clamps values below min to min', () => {
+    expect(clamp(-0.5, 0, 1)).toBe(0)
+  })
+  it('passes through values within range unchanged', () => {
+    expect(clamp(0.5, 0, 1)).toBe(0.5)
+  })
+})
 
 describe('computeFacialTension', () => {
   it('weights fearful at 0.6, angry at 0.3, disgusted at 0.1', () => {
@@ -14,6 +26,7 @@ describe('computeFacialTension', () => {
 
   it('clamps output to 0–1', () => {
     const fer = { fearful: 1, angry: 1, disgusted: 1, neutral: 0, happy: 0, sad: 0, surprised: 0 }
+    // toBeCloseTo because 0.6+0.3+0.1 = 0.9999... in IEEE 754; clamp returns <1 without explicit boundary check
     expect(computeFacialTension(fer)).toBeCloseTo(1)
   })
 
@@ -68,6 +81,15 @@ describe('updateCadenceState', () => {
     const { speech_rush } = updateCadenceState(audio, 3000, state)
     expect(speech_rush).toBe(true)  // would fail if reset happened first
   })
+
+  it('preserves lastSilenceStartRaw when silence continues (does not reset)', () => {
+    // First tick: silence begins at t=1000
+    const s1 = updateCadenceState({ isSpeaking: false, rms: 0.01 }, 1000, { lastSilenceStartRaw: null })
+    expect(s1.nextState.lastSilenceStartRaw).toBe(1000)
+    // Second tick: silence continues at t=1200 — start time must not change
+    const s2 = updateCadenceState({ isSpeaking: false, rms: 0.01 }, 1200, s1.nextState)
+    expect(s2.nextState.lastSilenceStartRaw).toBe(1000)
+  })
 })
 
 describe('updateFreezeCount', () => {
@@ -115,6 +137,7 @@ describe('computeDisfluency', () => {
   })
 
   it('counts occurrences not unique matches', () => {
+    // Longer sentences needed — short disfluent sentences (e.g. 6 tokens with 1 filler) saturate to 1.0, masking differentiation
     const one = computeDisfluency('um the algorithm sorts arrays and returns the result quickly today tomorrow')
     const three = computeDisfluency('um the um algorithm um sorts arrays and returns the result quickly today tomorrow')
     expect(three).toBeGreaterThan(one)
