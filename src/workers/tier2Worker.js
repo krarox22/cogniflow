@@ -41,7 +41,7 @@ async function handleAudioChunk(data) {
     sessionAudioContextStartWallTime = data.wallTime
   }
 
-  pendingPcm = data.pcmData   // track last chunk for END_SESSION partial flush
+  pendingPcm = data.pcmData   // worker owns this buffer — transferred from main thread, safe to store
 
   try {
     const result = await transcriber(data.pcmData, { sampling_rate: data.sampleRate })
