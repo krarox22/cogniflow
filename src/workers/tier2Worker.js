@@ -9,7 +9,8 @@ const DRIFT_CLAMP_MS = 500
 
 let sessionAudioContextStartTime = null
 let sessionAudioContextStartWallTime = null
-let pendingPcm = null
+let lastCompletePcm = null
+let lastCompleteSampleRate = null
 
 self.onmessage = async ({ data }) => {
   switch (data.type) {
@@ -41,7 +42,8 @@ async function handleAudioChunk(data) {
     sessionAudioContextStartWallTime = data.wallTime
   }
 
-  pendingPcm = data.pcmData   // worker owns this buffer — transferred from main thread, safe to store
+  lastCompletePcm = data.pcmData   // worker owns this buffer — transferred from main thread, safe to store
+  lastCompleteSampleRate = data.sampleRate
 
   try {
     const result = await transcriber(data.pcmData, { sampling_rate: data.sampleRate })
@@ -77,9 +79,10 @@ function correctChunkTimestamps(data) {
 }
 
 async function handleEndSession() {
-  if (pendingPcm && pendingPcm.length > 0 && transcriber && sessionStartTime) {
+  // For sessions <4s, this re-runs the only chunk; for longer sessions this is a duplicate (V1 limitation)
+  if (lastCompletePcm && lastCompletePcm.length > 0 && transcriber && sessionStartTime) {
     try {
-      const result = await transcriber(pendingPcm, { sampling_rate: 48_000 })
+      const result = await transcriber(lastCompletePcm, { sampling_rate: lastCompleteSampleRate ?? 48_000 })
       const text = result.text?.trim() ?? ''
       if (text) {
         const disfluency = computeDisfluency(text)
@@ -94,7 +97,7 @@ async function handleEndSession() {
       }
     } catch (_) {}
   }
-  pendingPcm = null
+  lastCompletePcm = null
   self.postMessage({ type: 'FLUSH_COMPLETE', source: 'tier2' })
 }
 
@@ -103,6 +106,7 @@ function handleReset() {
   currentQuestionTitle = ''
   sessionAudioContextStartTime = null
   sessionAudioContextStartWallTime = null
-  pendingPcm = null
+  lastCompletePcm = null
+  lastCompleteSampleRate = null
   console.log('[Tier2Worker] RESET')
 }

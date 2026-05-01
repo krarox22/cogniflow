@@ -140,6 +140,12 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       pendingTier2StartRef.current = { sessionStartTime, currentQuestionTitle }
     }
 
+    // Frame/audio capture is NOT started here — it starts when the INTERVIEWING
+    // phase begins (after calibration) via startCapture(). This prevents FER
+    // inference from running during calibration and contaminating the timeline.
+  }
+
+  function startCapture() {
     startFrameCapture()
     // Intentionally not awaited — AudioWorklet setup is best-effort and must
     // not block session start. Failures are caught inside setupAudioWorklet().
@@ -227,6 +233,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     tier2Ready,
     tier2StartOffsetMs,
     startSession,
+    startCapture,
     endSession,
     resetEngine,
     signalEventsRef,

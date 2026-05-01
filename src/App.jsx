@@ -56,6 +56,7 @@ export default function App() {
     tier2Ready,
     tier2StartOffsetMs,
     startSession,
+    startCapture,
     endSession,
     resetEngine,
     signalEventsRef,
@@ -212,6 +213,9 @@ export default function App() {
                   calibPhaseRef.current = 'ready'
                   earBufferRef.current = []
                   setPhase('INTERVIEWING')
+                  // Calibration complete — now start FER frame capture and audio worklet
+                  // so that FRAME_DATA only flows during the INTERVIEWING phase.
+                  startCapture()
                 }
               } else if (calibPhaseRef.current === 'ready') {
                 if (ear < earThresholdRef.current && now - lastBlinkTime > 300) {

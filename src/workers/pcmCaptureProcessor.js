@@ -18,8 +18,10 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     if (!input || input.length === 0) return true
 
     const channelData = input[0]
-    this._buffer.set(channelData, this._writePos)
-    this._writePos += channelData.length
+    const available = this._flushFrames - this._writePos
+    const toWrite = Math.min(channelData.length, available)
+    this._buffer.set(channelData.subarray(0, toWrite), this._writePos)
+    this._writePos += toWrite
 
     if (this._writePos >= this._flushFrames) {
       const pcm = this._buffer.slice(0, this._writePos)
