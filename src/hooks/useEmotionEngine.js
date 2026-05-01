@@ -15,6 +15,8 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   const flushResolveRef = useRef(null)
   const frameIntervalRef = useRef(null)
   const audioFlushIntervalRef = useRef(null)
+  const audioContextRef = useRef(null)
+  const audioWorkletNodeRef = useRef(null)
 
   // Lobby warmup — create workers on mount
   useEffect(() => {
@@ -40,6 +42,14 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     return () => {
       aggregator.terminate()
       tier2.terminate()
+    }
+  }, [])
+
+  // AudioWorklet cleanup on unmount
+  useEffect(() => {
+    return () => {
+      audioWorkletNodeRef.current?.disconnect()
+      audioContextRef.current?.close()
     }
   }, [])
 
@@ -73,6 +83,47 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     }
   }
 
+  async function setupAudioWorklet() {
+    // streamRef is guaranteed to be set by the time startSession is called —
+    // App.jsx gates handleStartInterview on cameraReady, which is only set
+    // after getUserMedia resolves and streamRef.current is populated.
+    if (!streamRef.current) return
+
+    let audioCtx = null
+    try {
+      audioCtx = new AudioContext()
+      audioContextRef.current = audioCtx
+
+      const processorUrl = new URL('../workers/pcmCaptureProcessor.js', import.meta.url).href
+      await audioCtx.audioWorklet.addModule(processorUrl)
+
+      const source = audioCtx.createMediaStreamSource(streamRef.current)
+      const workletNode = new AudioWorkletNode(audioCtx, 'pcm-capture')
+      audioWorkletNodeRef.current = workletNode
+
+      workletNode.port.onmessage = ({ data }) => {
+        if (data.type !== 'PCM_FLUSH') return
+        if (!sessionStartTimeRef.current || !tier2Ref.current) return
+
+        tier2Ref.current.postMessage(
+          {
+            type: 'AUDIO_CHUNK',
+            pcmData: data.pcm,
+            sampleRate: data.sampleRate,
+            audioContextTime: audioCtx.currentTime,
+            wallTime: performance.now() - sessionStartTimeRef.current,
+          },
+          [data.pcm.buffer]
+        )
+      }
+
+      source.connect(workletNode)
+      // workletNode intentionally not connected to audioCtx.destination — capture only, not playback
+    } catch (err) {
+      console.warn('[useEmotionEngine] AudioWorklet setup failed:', err)
+    }
+  }
+
   function startSession(sessionStartTime) {
     signalEventsRef.current = []
     sessionStartTimeRef.current = sessionStartTime
@@ -87,7 +138,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     }
 
     startFrameCapture()
-    // Audio chunk flush added in Task 11
+    setupAudioWorklet()
   }
 
   function startFrameCapture() {
@@ -124,6 +175,11 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     frameIntervalRef.current = null
     audioFlushIntervalRef.current = null
 
+    audioWorkletNodeRef.current?.disconnect()
+    audioContextRef.current?.close()
+    audioWorkletNodeRef.current = null
+    audioContextRef.current = null
+
     endingPromiseRef.current = new Promise((resolve) => {
       flushResolveRef.current = resolve
       // Send END_SESSION to Tier 2 — the chain in handleTier2Message
@@ -143,6 +199,11 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     clearInterval(audioFlushIntervalRef.current)
     frameIntervalRef.current = null
     audioFlushIntervalRef.current = null
+
+    audioWorkletNodeRef.current?.disconnect()
+    audioContextRef.current?.close()
+    audioWorkletNodeRef.current = null
+    audioContextRef.current = null
 
     signalEventsRef.current = []
     sessionStartTimeRef.current = null
