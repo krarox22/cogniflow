@@ -3,6 +3,7 @@
 // State machine: IDLE → LOADING → READY → ARMED → RUNNING → FLUSHING → IDLE
 
 import { pipeline } from '@xenova/transformers'
+import { computeFacialTension, updateCadenceState, updateFreezeCount } from '../utils/signals.js'
 
 // Maps model label strings to the SignalEvent schema property names.
 // Some FER model checkpoints use 'fear'/'disgust'/'surprise' (truncated);
@@ -27,6 +28,13 @@ let fer = null
 let sessionStartTime = null
 let inferenceInFlight = false   // Guard G1
 
+let buffer = []
+let sequenceNum = 0
+let cadenceState = { lastSilenceStartRaw: null }
+let freezeCount = 0
+
+const BUFFER_WINDOW_MS = 10_000
+
 self.onmessage = async ({ data }) => {
   switch (data.type) {
     case 'LOAD_MODELS': await handleLoadModels(); break
@@ -49,28 +57,74 @@ function handleStartSession({ sessionStartTime: t }) {
 }
 
 async function handleFrameData(data) {
-  // Guard G1: single in-flight inference — drop frame if busy
+  // Guard G1: single in-flight inference
   if (inferenceInFlight) { data.frame?.close(); return }
   if (!fer || !sessionStartTime) { data.frame?.close(); return }
 
   inferenceInFlight = true
-  const tickNow = data.rawTimestamp   // Guard G2: single clock per tick — used in Task 7 tick cycle
+  const tickNow = data.rawTimestamp   // Guard G2: single clock per tick
 
   try {
-    // Convert ImageBitmap → ImageData via OffscreenCanvas for pipeline input
+    // 1. FER inference
     const canvas = new OffscreenCanvas(data.frame.width, data.frame.height)
     const ctx = canvas.getContext('2d')
     ctx.drawImage(data.frame, 0, 0)
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-
     const results = await fer(imageData)
     const ferVector = parseFerResults(results)
 
-    console.log('[AggregatorWorker] FER:', ferVector)
+    // 2. Derived signals
+    const facial_tension = computeFacialTension(ferVector)
+    const { cadence_gap, speech_rush, nextState } = updateCadenceState(data.audio, tickNow, cadenceState)
+    cadenceState = nextState
+    const { consecutiveFreezeCount: nextFreezeCount, physical_freeze } =
+      updateFreezeCount(facial_tension, cadence_gap, data.audio.rms, freezeCount)
+    freezeCount = nextFreezeCount
+
+    // 3. Build SignalEvent
+    const event = {
+      id:           `sig-${sequenceNum++}`,
+      rawTimestamp: tickNow,                        // internal only — stripped on emit
+      timestamp:    tickNow - sessionStartTime,
+      finalized:    false,
+      signals: {
+        facial_tension,
+        cadence_gap,
+        speech_rush,
+        physical_freeze,
+        linguistic_disfluency: null,
+        raw: { fer: ferVector, audio: data.audio },
+      },
+      context: null,
+    }
+
+    // Guard G4: dev-only monotonicity assertion
+    if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && buffer.length > 0) {
+      const prev = buffer[buffer.length - 1]
+      if (tickNow < prev.rawTimestamp) {
+        console.error('[AggregatorWorker] Monotonicity violated:', tickNow, '<', prev.rawTimestamp)
+      }
+    }
+
+    buffer.push(event)
+
+    // 4. Finalization pass using same tickNow
+    runFinalizationPass(tickNow)
+
   } finally {
     data.frame?.close()
     inferenceInFlight = false
   }
+}
+
+function runFinalizationPass(tickNow) {
+  const ready = buffer.filter(e => (tickNow - e.rawTimestamp) > BUFFER_WINDOW_MS)
+  for (const event of ready) {
+    event.finalized = true
+    const { rawTimestamp, ...emittable } = event
+    self.postMessage({ type: 'SIGNAL_EVENT', event: emittable })
+  }
+  buffer = buffer.filter(e => !e.finalized)
 }
 
 function handleTranscriptChunk(data) {
@@ -84,6 +138,10 @@ function handleEndSession() {
 }
 
 function handleReset() {
+  buffer = []
+  sequenceNum = 0
+  cadenceState = { lastSilenceStartRaw: null }
+  freezeCount = 0
   inferenceInFlight = false
   sessionStartTime = null
   console.log('[AggregatorWorker] RESET')
