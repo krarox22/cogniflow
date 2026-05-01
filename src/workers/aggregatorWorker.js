@@ -129,9 +129,22 @@ function runFinalizationPass(tickNow) {
   buffer = buffer.filter(e => !e.finalized)
 }
 
-function handleTranscriptChunk(data) {
-  // Backfill implemented in Task 11
-  console.log('[AggregatorWorker] TRANSCRIPT_CHUNK received:', data.topic)
+function handleTranscriptChunk({ start, end, topic, text, disfluency }) {
+  if (!sessionStartTime) return
+
+  const absStart = sessionStartTime + start
+  const absEnd   = sessionStartTime + end
+
+  for (const event of buffer) {
+    if (event.rawTimestamp < absStart || event.rawTimestamp > absEnd) continue
+
+    // Guard G3: first-write-wins — only patch if currently null
+    if (event.signals.linguistic_disfluency !== null) continue
+
+    event.signals.linguistic_disfluency = disfluency
+    event.context = { text, topic, chunkStart: start, chunkEnd: end }
+  }
+  // Events already finalized (removed from buffer) are silently skipped — expected behavior
 }
 
 function handleEndSession() {
