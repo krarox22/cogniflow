@@ -150,19 +150,21 @@ export default function App() {
           if (now - lastScoreUpdate.current > 500) {
             lastScoreUpdate.current = now
             setAudioLevel(level)
-            setStressScore(prev => {
-              const isLoud = level > audioThresholdRef.current + 3
-              const currentBlinks = blinkCountRef.current
-              const hasNewBlink = currentBlinks > lastBlinkCountRef.current
-              lastBlinkCountRef.current = currentBlinks
-              const blinkSpike = hasNewBlink ? 5 : 0
-              const rise = isLoud ? 3 + (level / 100) * 2 : 0
-              const decay = isLoud ? 0 : 4
-              const next = prev + rise + blinkSpike - decay
-              const result = Math.max(0, Math.min(100, next))
-              stressRef.current = result
-              return result
-            })
+            if (calibPhaseRef.current === 'ready') {
+              setStressScore(prev => {
+                const isLoud = level > audioThresholdRef.current + 3
+                const currentBlinks = blinkCountRef.current
+                const hasNewBlink = currentBlinks > lastBlinkCountRef.current
+                lastBlinkCountRef.current = currentBlinks
+                const blinkSpike = hasNewBlink ? 5 : 0
+                const rise = isLoud ? 3 + (level / 100) * 2 : 0
+                const decay = isLoud ? 0 : 4
+                const next = prev + rise + blinkSpike - decay
+                const result = Math.max(0, Math.min(100, next))
+                stressRef.current = result
+                return result
+              })
+            }
           }
           animId = requestAnimationFrame(updateAudio)
         }
