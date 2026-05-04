@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts'
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Scatter, Legend } from 'recharts'
 import { questions } from './questions'
 import { useEmotionEngine } from './hooks/useEmotionEngine'
+import { buildUnifiedTimeline, generateCoachingCards } from './utils/reportTimeline'
 import './App.css'
 
 function formatTime(seconds) {
@@ -11,13 +12,51 @@ function formatTime(seconds) {
   return `${m}:${s}`
 }
 
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div style={{ background: '#111', border: '1px solid #333', borderRadius: 8, padding: '10px', fontSize: 12 }}>
+        <div style={{ marginBottom: '8px', color: '#fff' }}>{`Time ${formatTime(Math.round(label))}`}</div>
+        {payload.map((entry, index) => {
+          if (entry.dataKey === 'stress' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Stress : ${Math.round(entry.value)}`}</div>
+          }
+          if (entry.dataKey === 'facialTension' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Facial tension : ${Math.round(entry.value)}`}</div>
+          }
+          if (entry.dataKey === 'pauseMarker' && entry.value != null) {
+             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Pause detected`}</div>
+          }
+          if (entry.dataKey === 'rushMarker' && entry.value != null) {
+             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Rush detected`}</div>
+          }
+          if (entry.dataKey === 'freezeMarker' && entry.value != null) {
+             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Freeze detected`}</div>
+          }
+          if (entry.dataKey === 'disfluencyMarker' && entry.value != null) {
+             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Disfluency detected`}</div>
+          }
+          if (entry.dataKey === 'tenseDisfluencyMarker' && entry.value != null) {
+             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Tense disfluency detected`}</div>
+          }
+          return null;
+        })}
+      </div>
+    );
+  }
+  return null;
+};
+
+
 export default function App() {
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const earBufferRef = useRef([])
+  const audioBufferRef = useRef([])
   const earThresholdRef = useRef(0.015)
+  const audioThresholdRef = useRef(12)
   const audioLevelRef = useRef(0)
   const lastScoreUpdate = useRef(0)
   const calibStartRef = useRef(null)
@@ -25,6 +64,7 @@ export default function App() {
   const sessionTimeRef = useRef(0)
   const stressRef = useRef(0)
   const blinkCountRef = useRef(0)
+  const lastBlinkCountRef = useRef(0)
   const sessionDataRef = useRef([])
   const startingRef = useRef(false)
 
@@ -53,7 +93,6 @@ export default function App() {
 
   const {
     tier1Ready,
-    tier2Ready,
     tier2StartOffsetMs,
     startSession,
     startCapture,
@@ -65,6 +104,7 @@ export default function App() {
     audioLevelRef,
     canvasRef,
     currentQuestionTitle: currentQuestion.title,
+    audioThresholdRef,
   })
 
   useEffect(() => {
@@ -90,31 +130,44 @@ export default function App() {
         source.connect(analyser)
         const dataArray = new Uint8Array(analyser.frequencyBinCount)
 
+
+
+
+        
+
+        
         function updateAudio() {
           analyser.getByteFrequencyData(dataArray)
           const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length
           const level = Math.min(100, Math.round((avg / 128) * 100))
           audioLevelRef.current = level
 
+          if (calibPhaseRef.current === 'calibrating') {
+            audioBufferRef.current.push(level)
+          }
+
           const now = Date.now()
           if (now - lastScoreUpdate.current > 500) {
             lastScoreUpdate.current = now
             setAudioLevel(level)
             setStressScore(prev => {
-            const isLoud = level > 15
-            const recentBlinks = blinkCountRef.current
-            const blinkSpike = recentBlinks > 0 && isLoud ? 8 : 0
-            const rise = isLoud ? (level / 100) * 3 + blinkSpike : 0
-            const decay = isLoud ? 0 : 1.2
-            const next = isLoud ? prev + rise : prev - decay
-            const result = Math.max(0, Math.min(100, next))
-            stressRef.current = result
-            return result
-          })
+              const isLoud = level > audioThresholdRef.current + 3
+              const currentBlinks = blinkCountRef.current
+              const hasNewBlink = currentBlinks > lastBlinkCountRef.current
+              lastBlinkCountRef.current = currentBlinks
+              const blinkSpike = hasNewBlink ? 5 : 0
+              const rise = isLoud ? 3 + (level / 100) * 2 : 0
+              const decay = isLoud ? 0 : 4
+              const next = prev + rise + blinkSpike - decay
+              const result = Math.max(0, Math.min(100, next))
+              stressRef.current = result
+              return result
+            })
           }
           animId = requestAnimationFrame(updateAudio)
         }
         updateAudio()
+        
 
       } catch (err) {
         if (err.name === 'NotAllowedError') {
@@ -212,6 +265,14 @@ export default function App() {
                   setCalibPhase('ready')
                   calibPhaseRef.current = 'ready'
                   earBufferRef.current = []
+
+                  const audioSamples = audioBufferRef.current
+                  const avgAudio = audioSamples.length > 0
+                    ? audioSamples.reduce((a, b) => a + b, 0) / audioSamples.length
+                    : 0
+                  audioThresholdRef.current = Math.max(5, Math.min(40, avgAudio + 8))
+                  audioBufferRef.current = []
+
                   setPhase('INTERVIEWING')
                   // Calibration complete — now start FER frame capture and audio worklet
                   // so that FRAME_DATA only flows during the INTERVIEWING phase.
@@ -307,7 +368,9 @@ export default function App() {
     sessionTimeRef.current = 0
     stressRef.current = 0
     blinkCountRef.current = 0
+    lastBlinkCountRef.current = 0
     earBufferRef.current = []
+    audioBufferRef.current = []
     startingRef.current = false
     calibStartRef.current = null
     calibPhaseRef.current = 'idle'
@@ -328,6 +391,12 @@ export default function App() {
 
   const borderColor = stressScore < 30 ? '#22c55e' : stressScore < 60 ? '#f59e0b' : '#ef4444'
   const borderGlow = stressScore < 30 ? '0 0 12px #22c55e55' : stressScore < 60 ? '0 0 12px #f59e0b88' : '0 0 16px #ef444488'
+  const reportTimeline = reportData && !reportData.empty
+    ? buildUnifiedTimeline(reportData.sessionData || [], reportData.signalEvents || [])
+    : []
+  const coachingCards = reportData && !reportData.empty
+    ? generateCoachingCards(reportData.sessionData || [], reportData.signalEvents || [])
+    : []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f0f0f', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
@@ -368,8 +437,13 @@ export default function App() {
               <div style={{ background: '#1a0000', border: '1px solid #ef4444', borderRadius: 8, padding: 12, fontSize: 12, color: '#ef4444' }}>{cameraError}</div>
             )}
             <button onClick={handleStartInterview} disabled={!cameraReady || !!cameraError || !tier1Ready}
-              style={{ padding: '14px 0', fontSize: 15, fontWeight: 600, background: cameraReady && !cameraError && tier1Ready ? '#0D2E1A' : '#111', color: cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#555', border: `1.5px solid ${cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#333'}`, borderRadius: 8, cursor: cameraReady && !cameraError && tier1Ready ? 'pointer' : 'not-allowed' }}>
-              {!cameraReady ? 'Loading camera...' : !tier1Ready ? 'Preparing AI models...' : 'Start Interview'}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 0', fontSize: 15, fontWeight: 600, background: cameraReady && !cameraError && tier1Ready ? '#0D2E1A' : '#111', color: cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#555', border: `1.5px solid ${cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#333'}`, borderRadius: 8, cursor: cameraReady && !cameraError && tier1Ready ? 'pointer' : 'not-allowed' }}>
+              {!cameraReady ? 'Loading camera...' : !tier1Ready ? (
+                <>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #555', borderTopColor: '#aaa', animation: 'spin 1s linear infinite' }} />
+                  Preparing AI models...
+                </>
+              ) : 'Start Interview'}
             </button>
             <p style={{ fontSize: 11, color: '#555', textAlign: 'center', margin: 0 }}>A 10-second calibration will run first</p>
             <button onClick={handleNextQuestion} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: 12, cursor: 'pointer', textAlign: 'right', padding: 0 }}>
@@ -395,7 +469,7 @@ export default function App() {
       {(phase === 'CALIBRATING' || phase === 'INTERVIEWING') && (
         <div className="fade-in" style={{ flex: 1, position: 'relative', display: 'flex' }}>
 
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 12, padding: 12 }}>
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 12, padding: 12, filter: endingSession ? 'blur(8px)' : 'none', transition: 'filter 0.3s ease', pointerEvents: endingSession ? 'none' : 'auto' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 11, color: '#888', paddingLeft: 4 }}>CODE EDITOR</div>
               <div style={{ flex: 1, borderRadius: 8, overflow: 'hidden', border: `2px solid ${borderColor}`, boxShadow: borderGlow, transition: 'border-color 1s ease, box-shadow 1s ease', animation: 'breathe 4s ease-in-out infinite' }}>
@@ -413,7 +487,8 @@ export default function App() {
               {calibBaseline && (
                 <div style={{ background: '#0f2318', borderRadius: 8, padding: '8px 12px', border: '1px solid #22c55e33', fontSize: 11, color: '#22c55e' }}>
                   ✓ Baseline set — neutral EAR: {calibBaseline}<br />
-                  <span style={{ color: '#666' }}>Blink threshold: {(earThresholdRef.current).toFixed(4)} (baseline × 0.70)</span>
+                  <span style={{ color: '#666' }}>Blink threshold: {(earThresholdRef.current).toFixed(4)} (baseline × 0.70)</span><br />
+                  <span style={{ color: '#666' }}>Mic threshold: {Math.round(audioThresholdRef.current)}%</span>
                 </div>
               )}
               <div style={{ background: '#1a1a1a', borderRadius: 8, padding: 12, border: '1px solid #333' }}>
@@ -461,6 +536,17 @@ export default function App() {
             </div>
           </div>
 
+          {endingSession && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 60, background: 'rgba(15,15,15,0.6)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', border: '3px solid #333', borderTopColor: '#22c55e', animation: 'spin 1s linear infinite', marginBottom: 16 }} />
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#fff' }}>Processing Session Data...</div>
+              <div style={{ fontSize: 13, color: '#aaa', marginTop: 8 }}>Analyzing behavior and generating report</div>
+            </div>
+          )}
+
         </div>
       )}
 
@@ -493,17 +579,58 @@ export default function App() {
                 </div>
 
                 <div style={{ marginBottom: 28 }}>
-                  <div style={{ fontSize: 11, color: '#888', letterSpacing: 1, marginBottom: 10 }}>STRESS TIMELINE</div>
-                  <div style={{ height: 200, background: '#1a1a1a', borderRadius: 8, border: '1px solid #333', padding: '16px 16px 0 0' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={reportData.sessionData}>
+                  <div style={{ fontSize: 11, color: '#888', letterSpacing: 1, marginBottom: 10 }}>UNIFIED BEHAVIORAL TIMELINE</div>
+                  <div style={{ height: 280, background: '#1a1a1a', borderRadius: 8, border: '1px solid #333', padding: '16px 18px 8px 0' }}>
+                    <ResponsiveContainer width="100%" height={256}>
+                      <ComposedChart data={reportTimeline} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" fontSize={10} tickLine={false} axisLine={false} />
+                        <XAxis
+                          dataKey="seconds"
+                          type="number"
+                          stroke="#666"
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                          domain={['dataMin', 'dataMax']}
+                          tickFormatter={value => formatTime(Math.round(value))}
+                        />
                         <YAxis stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} />
-                        <Tooltip contentStyle={{ background: '#111', border: '1px solid #333', borderRadius: 8, fontSize: 12 }} itemStyle={{ color: '#f59e0b' }} />
-                        <Line type="monotone" dataKey="stress" stroke="#f59e0b" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#f59e0b', stroke: '#111', strokeWidth: 2 }} />
-                      </LineChart>
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: 10, color: '#888', paddingTop: 8 }} />
+                        <Line name="Stress" type="monotone" dataKey="stress" stroke="#f59e0b" strokeWidth={3} dot={false} connectNulls activeDot={{ r: 6, fill: '#f59e0b', stroke: '#111', strokeWidth: 2 }} />
+                        <Line name="Facial tension" type="monotone" dataKey="facialTension" stroke="#a78bfa" strokeWidth={2} dot={false} connectNulls />
+                        <Scatter name="Pause" dataKey="pauseMarker" fill="#fbbf24" shape="circle" />
+                        <Scatter name="Rush" dataKey="rushMarker" fill="#38bdf8" shape="circle" />
+                        <Scatter name="Freeze" dataKey="freezeMarker" fill="#ef4444" shape="circle" />
+                        <Scatter name="Disfluency" dataKey="disfluencyMarker" fill="#22c55e" shape="circle" />
+                        <Scatter name="Tense Disfluency" dataKey="tenseDisfluencyMarker" fill="#ec4899" shape="circle" />
+                      </ComposedChart>
                     </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 32 }}>
+                  <div style={{ fontSize: 11, color: '#888', letterSpacing: 1, marginBottom: 10 }}>NEXT ATTEMPT COACHING</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                    {coachingCards.map(card => (
+                      <div key={card.title} style={{ background: '#1a1a1a', borderRadius: 8, padding: 16, border: '1px solid #333' }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 10 }}>{card.title}</div>
+                        {[
+                          ['Detected', card.detected],
+                          ['Meaning', card.meaning],
+                          ['Strategy', card.strategy],
+                          ['Practice', card.practice],
+                        ].map(([label, value]) => (
+                          <div key={label} style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 10, color: '#777', letterSpacing: 0.8, marginBottom: 3 }}>{label.toUpperCase()}</div>
+                            <div style={{ fontSize: 12, color: '#ddd', lineHeight: 1.55 }}>{value}</div>
+                          </div>
+                        ))}
+                        <a href={card.resourceUrl} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', fontSize: 12, textDecoration: 'none' }}>
+                          {card.youtubeQuery}
+                        </a>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -530,6 +657,7 @@ export default function App() {
 
       <style>{`
         @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       `}</style>
     </div>
   )

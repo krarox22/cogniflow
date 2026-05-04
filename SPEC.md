@@ -213,6 +213,18 @@ const duration = formatTime(sessionData.length * 2)
 
 ---
 
+### Task 8: Unified Behavioral Timeline and Coaching
+
+**What it is:** The stress timeline is upgraded to a unified behavioral timeline that plots multiple physiological markers simultaneously, coupled with actionable coaching cards based on behavior.
+
+**What to build:**
+- Update Recharts to use `ComposedChart` with lines for continuous signals (Stress, Facial tension).
+- Add scatter points for discrete signals (Pause, Rush, Freeze, Disfluency, Tense Disfluency).
+- Implement `generateCoachingCards` in `reportTimeline.js` to dynamically create coaching feedback for detected behavioral patterns, such as "Tense Disfluency Recovery".
+- Render the Next Attempt Coaching section and Reflection Prompts within the Report Card view.
+
+---
+
 ## File Structure (Current as of Week 6)
 
 ```

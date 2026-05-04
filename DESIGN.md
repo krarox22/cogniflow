@@ -146,8 +146,14 @@ Turn raw stress data into something the user can learn from. Not a grade — a m
 │  │          │ │ at 2:40  │ │          │ │        │ │
 │  └──────────┘ └──────────┘ └──────────┘ └────────┘ │
 │                                                     │
-│  STRESS TIMELINE                                    │
-│  [Recharts Stress Timeline]                         │
+│  UNIFIED BEHAVIORAL TIMELINE                        │
+│  [Recharts ComposedChart with Lines and Scatters]   │
+│                                                     │
+│  NEXT ATTEMPT COACHING                              │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Tense Disfluency Recovery                   │   │
+│  │ Detected: 1 disfluency overlapping...       │   │
+│  └─────────────────────────────────────────────┘   │
 │                                                     │
 │  REFLECTION PROMPTS                                 │
 │  ┌─────────────────────────────────────────────┐   │
@@ -182,11 +188,13 @@ Turn raw stress data into something the user can learn from. Not a grade — a m
 - Always frame the peak as information, not judgment
 - The reflection prompts end with a question mark — they invite, they do not accuse
 
-### Recharts timeline (Week 6)
-The stress timeline is fully functional and implemented via a `ResponsiveContainer` and `LineChart` from `recharts`:
+### Recharts timeline and Coaching (Week 6)
+The stress timeline is fully functional and implemented via a `ResponsiveContainer` and `ComposedChart` from `recharts`:
 - Container layout: dark background (`#1a1a1a`) bounded by a subtle border (`1px solid #333`).
-- Data plotting: Uses `sessionData` mapped dynamically onto X (`time`) and Y (`stress`) axes.
-- Includes a responsive, dark-themed `Tooltip` rendered with custom accent coloring (`#f59e0b`) to inspect discrete metrics per entry.
+- Data plotting: Uses `sessionData` mapped dynamically onto X (`time`) and Y axes for continuous signals like `stress` and `facialTension` (Lines).
+- Discrete Markers: Includes `Scatter` points for Pause, Rush, Freeze, Disfluency, and Tense Disfluency.
+- Includes a responsive, dark-themed `Tooltip` rendered to inspect all discrete and continuous metrics per entry.
+- **Next Attempt Coaching**: Dynamically generates cards (e.g., "Tense Disfluency Recovery") with meaning, strategy, and practice tips based on overlapping stress signals.
 
 ---
 

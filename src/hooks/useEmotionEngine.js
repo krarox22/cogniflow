@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { computeDisfluency } from '../utils/signals'
 
-export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQuestionTitle }) {
+export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQuestionTitle, audioThresholdRef }) {
   const [tier1Ready, setTier1Ready] = useState(false)
   const [tier2Ready, setTier2Ready] = useState(false)
   const [tier2StartOffsetMs, setTier2StartOffsetMs] = useState(null)
@@ -12,11 +13,12 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   const pendingTier2StartRef = useRef(null)
   const endingRef = useRef(false)
   const endingPromiseRef = useRef(null)
-  const flushResolveRef = useRef(null)
+  
   const frameIntervalRef = useRef(null)
   const audioFlushIntervalRef = useRef(null)
   const audioContextRef = useRef(null)
   const audioWorkletNodeRef = useRef(null)
+  const speechRecognitionRef = useRef(null)
 
   // Lobby warmup — create workers on mount
   useEffect(() => {
@@ -35,9 +37,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     tier2Ref.current = tier2
     tier2.onmessage = handleTier2Message
     tier2.postMessage({ type: 'LOAD_MODELS' })
-
-    // handleAggregatorMessage and handleTier2Message are bound once at mount.
-    // Safe because all captured values are stable refs or React state setters.
 
     return () => {
       aggregator.terminate()
@@ -58,12 +57,8 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       setTier1Ready(true)
     } else if (data.type === 'SIGNAL_EVENT') {
       signalEventsRef.current.push(data.event)
-    } else if (data.type === 'FLUSH_COMPLETE') {
-      if (flushResolveRef.current) {
-        flushResolveRef.current()
-        flushResolveRef.current = null
-      }
     }
+    // FLUSH_COMPLETE is now handled by the temporary listener in endSession()
   }
 
   function handleTier2Message({ data }) {
@@ -77,16 +72,11 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       }
     } else if (data.type === 'TRANSCRIPT_CHUNK') {
       aggregatorRef.current.postMessage(data)   // relay verbatim
-    } else if (data.type === 'FLUSH_COMPLETE') {
-      // Tier 2 done — now trigger Tier 1 flush (see spec §8)
-      aggregatorRef.current.postMessage({ type: 'END_SESSION' })
     }
+    // FLUSH_COMPLETE is now handled by the temporary listener in endSession()
   }
 
   async function setupAudioWorklet() {
-    // streamRef is guaranteed to be set by the time startSession is called —
-    // App.jsx gates handleStartInterview on cameraReady, which is only set
-    // after getUserMedia resolves and streamRef.current is populated.
     if (!streamRef.current) return
 
     let audioCtx = null
@@ -118,7 +108,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       }
 
       source.connect(workletNode)
-      // workletNode intentionally not connected to audioCtx.destination — capture only, not playback
     } catch (err) {
       console.warn('[useEmotionEngine] AudioWorklet setup failed:', err)
       audioCtx?.close()
@@ -139,17 +128,52 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     } else {
       pendingTier2StartRef.current = { sessionStartTime, currentQuestionTitle }
     }
-
-    // Frame/audio capture is NOT started here — it starts when the INTERVIEWING
-    // phase begins (after calibration) via startCapture(). This prevents FER
-    // inference from running during calibration and contaminating the timeline.
   }
 
   function startCapture() {
     startFrameCapture()
-    // Intentionally not awaited — AudioWorklet setup is best-effort and must
-    // not block session start. Failures are caught inside setupAudioWorklet().
     void setupAudioWorklet()
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.onresult = (event) => {
+        if (!sessionStartTimeRef.current) return
+        const lastResult = event.results[event.results.length - 1]
+        
+        const text = lastResult[0].transcript.trim()
+        if (!text) return
+        
+        // For interim results, we just compute disfluency and patch the last 1.5 seconds.
+        const disfluency = computeDisfluency(text)
+        const now = performance.now() - sessionStartTimeRef.current
+        
+        aggregatorRef.current.postMessage({
+          type: 'TRANSCRIPT_CHUNK',
+          start: Math.max(0, now - 1500),
+          end: now,
+          topic: currentQuestionTitle,
+          text,
+          disfluency,
+        })
+      }
+      recognition.onend = () => {
+        if (sessionStartTimeRef.current && speechRecognitionRef.current) {
+          try {
+            recognition.start()
+          } catch (err) {}
+        }
+      }
+
+      try {
+        recognition.start()
+        speechRecognitionRef.current = recognition
+      } catch (err) {
+        console.warn('SpeechRecognition start failed:', err)
+      }
+    }
   }
 
   function startFrameCapture() {
@@ -164,7 +188,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
             frame,
             audio: {
               rms: (audioLevelRef.current ?? 0) / 100,
-              isSpeaking: (audioLevelRef.current ?? 0) > 5,
+              isSpeaking: (audioLevelRef.current ?? 0) > (audioThresholdRef?.current ?? 12),
             },
             rawTimestamp: performance.now(),
           },
@@ -179,7 +203,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   async function endSession() {
     if (endingRef.current) return endingPromiseRef.current
     endingRef.current = true
-    pendingTier2StartRef.current = null   // cancel any deferred Tier 2 start
+    pendingTier2StartRef.current = null
 
     clearInterval(frameIntervalRef.current)
     clearInterval(audioFlushIntervalRef.current)
@@ -190,14 +214,57 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     audioContextRef.current?.close()
     audioWorkletNodeRef.current = null
     audioContextRef.current = null
+    
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop()
+      speechRecognitionRef.current = null
+    }
 
-    endingPromiseRef.current = new Promise((resolve) => {
-      flushResolveRef.current = resolve
-      // Send END_SESSION to Tier 2 — the chain in handleTier2Message
-      // waits for tier2 FLUSH_COMPLETE then triggers aggregator END_SESSION
-      // which resolves this promise via handleAggregatorMessage
+    console.log('[endSession] posting END_SESSION to both workers simultaneously')
+
+    // Attach temporary listener to Tier 1
+    const tier1Promise = new Promise((resolve) => {
+      const handler = (e) => {
+        if (e.data?.type === 'FLUSH_COMPLETE') {
+          console.log('[hook] tier1 FLUSH_COMPLETE')
+          aggregatorRef.current.removeEventListener('message', handler)
+          resolve()
+        }
+      }
+      aggregatorRef.current.addEventListener('message', handler)
+      aggregatorRef.current.postMessage({ type: 'END_SESSION' })
+    })
+
+    // Attach temporary listener to Tier 2
+    const tier2Promise = new Promise((resolve) => {
+      const handler = (e) => {
+        if (e.data?.type === 'FLUSH_COMPLETE') {
+          console.log('[hook] tier2 FLUSH_COMPLETE')
+          tier2Ref.current.removeEventListener('message', handler)
+          resolve()
+        }
+      }
+      tier2Ref.current.addEventListener('message', handler)
       tier2Ref.current.postMessage({ type: 'END_SESSION' })
     })
+
+    // 15-second failsafe timeout
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => {
+        console.warn('[endSession] flush timed out after 15s — resolving anyway')
+        resolve()
+      }, 15000)
+    })
+
+    // Race the parallel workers against the timeout
+    endingPromiseRef.current = Promise.race([
+      Promise.all([tier1Promise, tier2Promise]),
+      timeoutPromise,
+    ]).then(() => {
+      // Ensure the final promise resolves with the requested context
+      return { signalEvents: signalEventsRef.current }
+    })
+
     return endingPromiseRef.current
   }
 
@@ -216,12 +283,16 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     audioWorkletNodeRef.current = null
     audioContextRef.current = null
 
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop()
+      speechRecognitionRef.current = null
+    }
+
     signalEventsRef.current = []
     sessionStartTimeRef.current = null
     pendingTier2StartRef.current = null
     endingRef.current = false
     endingPromiseRef.current = null
-    flushResolveRef.current = null
     setTier2StartOffsetMs(null)
 
     aggregatorRef.current.postMessage({ type: 'RESET' })

@@ -1,4 +1,4 @@
-const FILLER_WORDS = ['um', 'uh', 'like', 'basically']
+const FILLER_WORDS = ['um', 'uh', 'like', 'basically', 'umm', 'ummm', 'uhh', 'ah', 'ahh', 'so', 'well']
 const FILLER_PHRASES = ['you know', 'sort of', 'kind of']
 const HEDGE_PHRASES = ["i think", "maybe", "perhaps", "i'm not sure", "probably", "i guess"]
 
@@ -21,18 +21,40 @@ export function computeFacialTension(fer) {
  * Caller (aggregatorWorker) owns the mutable state object.
  * @param {{ isSpeaking: boolean, rms: number }} audio
  * @param {number} rawTimestamp  absolute performance.now() value
- * @param {{ lastSilenceStartRaw: number|null }} state
- * @returns {{ cadence_gap: boolean, speech_rush: boolean, nextState: object }}
+ * @param {{ lastSilenceStartRaw: number|null, lastSpeechStartRaw: number|null, silenceBeforeSpeech: number }} state
+ * @returns {{ cadence_gap: boolean, speech_rush: boolean, acoustic_disfluency: boolean, nextState: object }}
  */
 export function updateCadenceState(audio, rawTimestamp, state) {
-  const nextState = { lastSilenceStartRaw: state.lastSilenceStartRaw }
+  const nextState = { 
+    lastSilenceStartRaw: state.lastSilenceStartRaw,
+    lastSpeechStartRaw: state.lastSpeechStartRaw ?? null,
+    silenceBeforeSpeech: state.silenceBeforeSpeech ?? 0
+  }
   let cadence_gap, speech_rush
+  let acoustic_disfluency = false
 
   if (!audio.isSpeaking) {
     if (nextState.lastSilenceStartRaw === null) nextState.lastSilenceStartRaw = rawTimestamp
     cadence_gap = (rawTimestamp - nextState.lastSilenceStartRaw) > GAP_THRESHOLD_MS
     speech_rush = false
+
+    if (nextState.lastSpeechStartRaw !== null) {
+      const speechDuration = rawTimestamp - nextState.lastSpeechStartRaw
+      if (speechDuration < 1000 && nextState.silenceBeforeSpeech > 500) {
+        acoustic_disfluency = true
+      }
+      nextState.lastSpeechStartRaw = null
+    }
   } else {
+    if (nextState.lastSpeechStartRaw === null) {
+      nextState.lastSpeechStartRaw = rawTimestamp
+      if (nextState.lastSilenceStartRaw !== null) {
+        nextState.silenceBeforeSpeech = rawTimestamp - nextState.lastSilenceStartRaw
+      } else {
+        nextState.silenceBeforeSpeech = 0
+      }
+    }
+
     // Read wasGapped BEFORE resetting state — ordering is load-bearing
     const wasGapped =
       nextState.lastSilenceStartRaw !== null &&
@@ -42,7 +64,7 @@ export function updateCadenceState(audio, rawTimestamp, state) {
     nextState.lastSilenceStartRaw = null
   }
 
-  return { cadence_gap, speech_rush, nextState }
+  return { cadence_gap, speech_rush, acoustic_disfluency, nextState }
 }
 
 /**
