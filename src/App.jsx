@@ -439,10 +439,13 @@ export default function App() {
             <button onClick={handleStartInterview} disabled={!cameraReady || !!cameraError || !tier1Ready}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 0', fontSize: 15, fontWeight: 600, background: cameraReady && !cameraError && tier1Ready ? '#0D2E1A' : '#111', color: cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#555', border: `1.5px solid ${cameraReady && !cameraError && tier1Ready ? '#22c55e' : '#333'}`, borderRadius: 8, cursor: cameraReady && !cameraError && tier1Ready ? 'pointer' : 'not-allowed' }}>
               {!cameraReady ? 'Loading camera...' : !tier1Ready ? (
-                <>
-                  <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #555', borderTopColor: '#aaa', animation: 'spin 1s linear infinite' }} />
-                  Preparing AI models...
-                </>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #555', borderTopColor: '#aaa', animation: 'spin 1s linear infinite' }} />
+                    Preparing AI models...
+                  </div>
+                  <span style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>This might take a few moments</span>
+                </div>
               ) : 'Start Interview'}
             </button>
             <p style={{ fontSize: 11, color: '#555', textAlign: 'center', margin: 0 }}>A 10-second calibration will run first</p>
