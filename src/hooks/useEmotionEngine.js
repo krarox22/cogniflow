@@ -13,7 +13,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   const pendingTier2StartRef = useRef(null)
   const endingRef = useRef(false)
   const endingPromiseRef = useRef(null)
-  
+
   const frameIntervalRef = useRef(null)
   const audioFlushIntervalRef = useRef(null)
   const audioContextRef = useRef(null)
@@ -142,14 +142,14 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       recognition.onresult = (event) => {
         if (!sessionStartTimeRef.current) return
         const lastResult = event.results[event.results.length - 1]
-        
+
         const text = lastResult[0].transcript.trim()
         if (!text) return
-        
+
         // For interim results, we just compute disfluency and patch the last 1.5 seconds.
         const disfluency = computeDisfluency(text)
         const now = performance.now() - sessionStartTimeRef.current
-        
+
         aggregatorRef.current.postMessage({
           type: 'TRANSCRIPT_CHUNK',
           start: Math.max(0, now - 1500),
@@ -163,7 +163,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
         if (sessionStartTimeRef.current && speechRecognitionRef.current) {
           try {
             recognition.start()
-          } catch (err) {}
+          } catch (err) { }
         }
       }
 
@@ -214,7 +214,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     audioContextRef.current?.close()
     audioWorkletNodeRef.current = null
     audioContextRef.current = null
-    
+
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.stop()
       speechRecognitionRef.current = null
@@ -270,7 +270,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
 
   async function resetEngine() {
     if (endingRef.current && endingPromiseRef.current) {
-      try { await endingPromiseRef.current } catch (_) {}
+      try { await endingPromiseRef.current } catch (_) { }
     }
 
     clearInterval(frameIntervalRef.current)

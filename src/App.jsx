@@ -25,19 +25,19 @@ const CustomTooltip = ({ active, payload, label }) => {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Facial tension : ${Math.round(entry.value)}`}</div>
           }
           if (entry.dataKey === 'pauseMarker' && entry.value != null) {
-             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Pause detected`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Pause detected`}</div>
           }
           if (entry.dataKey === 'rushMarker' && entry.value != null) {
-             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Rush detected`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Rush detected`}</div>
           }
           if (entry.dataKey === 'freezeMarker' && entry.value != null) {
-             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Freeze detected`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Freeze detected`}</div>
           }
           if (entry.dataKey === 'disfluencyMarker' && entry.value != null) {
-             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Disfluency detected`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Disfluency detected`}</div>
           }
           if (entry.dataKey === 'tenseDisfluencyMarker' && entry.value != null) {
-             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Tense disfluency detected`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Tense disfluency detected`}</div>
           }
           return null;
         })}
@@ -133,9 +133,9 @@ export default function App() {
 
 
 
-        
 
-        
+
+
         function updateAudio() {
           analyser.getByteFrequencyData(dataArray)
           const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length
@@ -153,13 +153,10 @@ export default function App() {
             if (calibPhaseRef.current === 'ready') {
               setStressScore(prev => {
                 const isLoud = level > audioThresholdRef.current + 3
-                const currentBlinks = blinkCountRef.current
-                const hasNewBlink = currentBlinks > lastBlinkCountRef.current
-                lastBlinkCountRef.current = currentBlinks
-                const blinkSpike = hasNewBlink ? 5 : 0
-                const rise = isLoud ? 3 + (level / 100) * 2 : 0
-                const decay = isLoud ? 0 : 4
-                const next = prev + rise + blinkSpike - decay
+                lastBlinkCountRef.current = blinkCountRef.current
+                const rise = isLoud ? 2 + (level / 100) * 1 : 0
+                const decay = isLoud ? 1 : 6
+                const next = prev + rise - decay
                 const result = Math.max(0, Math.min(100, next))
                 stressRef.current = result
                 return result
@@ -169,7 +166,7 @@ export default function App() {
           animId = requestAnimationFrame(updateAudio)
         }
         updateAudio()
-        
+
 
       } catch (err) {
         if (err.name === 'NotAllowedError') {
