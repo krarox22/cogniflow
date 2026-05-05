@@ -4,6 +4,7 @@ import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, Cartes
 import { questions } from './questions'
 import { useEmotionEngine } from './hooks/useEmotionEngine'
 import { buildUnifiedTimeline, generateCoachingCards } from './utils/reportTimeline'
+import { computeStressScore } from './utils/stressIndex'
 import './App.css'
 
 function formatTime(seconds) {
@@ -206,18 +207,14 @@ export default function App() {
             const dtRaw = nowPerf - lastStressUpdateRef.current
             lastStressUpdateRef.current = nowPerf
             const dt = Math.min(dtRaw, 100)
-            const timeScale = dt / 500
-
-            const isLoud = level > audioThresholdRef.current + 3
-            const isSilent = level < audioThresholdRef.current
-            const e = emotionsRef.current
-            const emotionDelta = e.fear * 4 + e.anger * 3 - e.smile * 3
-            const audioDelta = isLoud ? (2 + (level / 100)) : 0
-            const silenceDecay = isSilent ? -6 : (isLoud ? -1 : 0)
 
             setStressScore(prev => {
-              const next = prev + (emotionDelta + audioDelta + silenceDecay) * timeScale
-              const result = Math.max(0, Math.min(100, next))
+              const result = computeStressScore(prev, {
+                emotions: emotionsRef.current,
+                audioLevel: level,
+                audioThreshold: audioThresholdRef.current,
+                dtMs: dt,
+              })
               stressRef.current = result
               return result
             })
