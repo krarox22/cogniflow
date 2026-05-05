@@ -144,8 +144,10 @@ describe('computeDisfluency', () => {
   })
 
   it('detects hedge phrases', () => {
-    const hedge = computeDisfluency('i think the answer is probably maybe correct')
-    const clean = computeDisfluency('the answer is correct and well reasoned')
+    // Sentences must be long enough to avoid saturating to 1.0 (rawScore >= tokens/10).
+    // Avoid "well" in the clean fixture — it is itself a filler word.
+    const hedge = computeDisfluency('i think the algorithm sorts arrays and maybe returns the result quickly today tomorrow')
+    const clean = computeDisfluency('the algorithm sorts arrays and returns the result quickly today tomorrow morning')
     expect(hedge).toBeGreaterThan(clean)
   })
 

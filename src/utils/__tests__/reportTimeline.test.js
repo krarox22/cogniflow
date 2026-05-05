@@ -80,10 +80,10 @@ describe('generateCoachingCards', () => {
       eventAt(3000, { cadence_gap: true }),
     ])
 
-    expect(cards.map(card => card.title)).toContain('Pause Recovery')
-    expect(cards.find(card => card.title === 'Pause Recovery').resourceUrl).toContain(
-      'coding%20interview%20think%20aloud%20practice',
-    )
+    const pauseRecovery = cards.find(card => card.title === 'Pause Recovery')
+    expect(pauseRecovery).toBeDefined()
+    expect(pauseRecovery.youtubeQuery).toBe('coding interview think aloud practice')
+    expect(pauseRecovery.resourceUrl).toMatch(/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//)
   })
 
   it('creates Nervous Pause Recovery when a cadence gap overlaps elevated facial tension', () => {
@@ -103,11 +103,14 @@ describe('generateCoachingCards', () => {
       eventAt(3000, { speech_rush: true, linguistic_disfluency: 0.4 }),
     ])
 
+    // The first event also satisfies the Tense Disfluency Recovery trigger
+    // (linguistic_disfluency > 0.4 + facial_tension >= 0.25), so it's included.
     expect(cards.map(card => card.title)).toEqual([
       'Freeze Reset Strategy',
       'Slow Re-entry After Pauses',
       'Tension Release Cue',
       'Clearer Verbal Structure',
+      'Tense Disfluency Recovery',
     ])
   })
 
