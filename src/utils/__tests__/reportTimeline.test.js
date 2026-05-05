@@ -59,6 +59,7 @@ describe('buildUnifiedTimeline', () => {
     expect(timeline.find(d => d.seconds === 6)).toMatchObject({
       stress: 35,
       facialTension: 45,
+      verbal: 50,
       disfluencyMarker: 13,
     })
   })
@@ -100,6 +101,31 @@ describe('buildUnifiedTimeline', () => {
     expect(at2s.anger).toBeCloseTo(20, 5)
     expect(at2s.contempt).toBeCloseTo(5, 5)
     expect(at2s.audio).toBeCloseTo(32, 5)
+  })
+
+  it('populates verbal disfluency as a percent line field', () => {
+    const timeline = buildUnifiedTimeline(
+      [{ time: '00:02', stress: 25 }],
+      [eventAt(2000, { linguistic_disfluency: 0.42 })],
+    )
+
+    expect(timeline.find(p => p.seconds === 2).verbal).toBeCloseTo(42, 5)
+  })
+
+  it('carries stress across dense signal points so stress renders as a continuous line', () => {
+    const timeline = buildUnifiedTimeline(
+      [
+        { time: '00:02', stress: 25 },
+        { time: '00:04', stress: 45 },
+      ],
+      [
+        eventAt(2500, { facial_tension: 0.2 }),
+        eventAt(3000, { facial_tension: 0.3 }),
+      ],
+    )
+
+    expect(timeline.find(p => p.seconds === 2.5).stress).toBe(25)
+    expect(timeline.find(p => p.seconds === 3).stress).toBe(25)
   })
 
   it('keeps emotion/audio fields null when no event covers that second', () => {

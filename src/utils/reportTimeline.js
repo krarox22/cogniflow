@@ -38,6 +38,7 @@ function basePoint(seconds) {
     anger: null,
     contempt: null,
     audio: null,
+    verbal: null,
     pauseMarker: null,
     rushMarker: null,
     freezeMarker: null,
@@ -82,6 +83,7 @@ export function buildUnifiedTimeline(sessionData = [], signalEvents = []) {
     if (typeof signals.contempt === 'number') point.contempt = percent(signals.contempt)
     const rms = signals.raw?.audio?.rms
     if (typeof rms === 'number') point.audio = percent(rms)
+    if (typeof signals.linguistic_disfluency === 'number') point.verbal = percent(signals.linguistic_disfluency)
     if (signals.cadence_gap) point.pauseMarker = MARKER_Y.pauseMarker
     if (signals.speech_rush) point.rushMarker = MARKER_Y.rushMarker
     if (signals.physical_freeze) point.freezeMarker = MARKER_Y.freezeMarker
@@ -93,7 +95,16 @@ export function buildUnifiedTimeline(sessionData = [], signalEvents = []) {
     }
   }
 
-  return [...points.values()].sort((a, b) => a.seconds - b.seconds)
+  const timeline = [...points.values()].sort((a, b) => a.seconds - b.seconds)
+  let lastStress = null
+  for (const point of timeline) {
+    if (point.stress != null) {
+      lastStress = point.stress
+    } else if (lastStress != null) {
+      point.stress = lastStress
+    }
+  }
+  return timeline
 }
 
 function countWhere(signalEvents, predicate) {

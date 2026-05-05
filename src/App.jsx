@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, ReferenceLine } from 'recharts'
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts'
 import { questions } from './questions'
 import { useEmotionEngine } from './hooks/useEmotionEngine'
 import { buildUnifiedTimeline, generateCoachingCards } from './utils/reportTimeline'
@@ -13,28 +13,23 @@ function formatTime(seconds) {
 }
 
 const REPORT_SERIES = [
-  { key: 'stress', label: 'Stress', color: '#d2a630', primary: true },
-  { key: 'smile', label: 'Smile', color: '#3fb950', primary: true },
-  { key: 'facialTension', label: 'Tension', color: '#a371f7', primary: true },
+  { key: 'stress', label: 'Stress detector', color: '#d2a630' },
+  { key: 'audio', label: 'Audio level', color: '#58a6ff' },
+  { key: 'verbal', label: 'Verbal disfluency', color: '#22c55e' },
+  { key: 'smile', label: 'Smile', color: '#3fb950' },
+  { key: 'facialTension', label: 'Tension', color: '#a371f7' },
   { key: 'fear', label: 'Fear', color: '#f85149' },
   { key: 'anger', label: 'Anger', color: '#ff7b72' },
   { key: 'contempt', label: 'Contempt', color: '#79c0ff' },
-  { key: 'audio', label: 'Audio', color: '#58a6ff' },
 ]
 
 const DEFAULT_HIDDEN_REPORT_SERIES = {
+  smile: true,
+  facialTension: true,
   fear: true,
   anger: true,
   contempt: true,
 }
-
-const EVENT_MARKERS = [
-  { key: 'pauseMarker', label: 'Pause', color: '#fbbf24' },
-  { key: 'rushMarker', label: 'Rush', color: '#38bdf8' },
-  { key: 'freezeMarker', label: 'Freeze', color: '#ef4444' },
-  { key: 'disfluencyMarker', label: 'Disfluency', color: '#22c55e' },
-  { key: 'tenseDisfluencyMarker', label: 'Tense disfluency', color: '#ec4899' },
-]
 
 function formatPercent(value) {
   return `${Math.round(value)}%`
@@ -47,7 +42,13 @@ const CustomTooltip = ({ active, payload, label }) => {
         <div style={{ marginBottom: '8px', color: '#fff' }}>{`Time ${formatTime(Math.round(label))}`}</div>
         {payload.map((entry, index) => {
           if (entry.dataKey === 'stress' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Stress : ${formatPercent(entry.value)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Stress detector : ${formatPercent(entry.value)}`}</div>
+          }
+          if (entry.dataKey === 'audio' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Audio level : ${formatPercent(entry.value)}`}</div>
+          }
+          if (entry.dataKey === 'verbal' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Verbal disfluency : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'facialTension' && entry.value != null) {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Tension : ${formatPercent(entry.value)}`}</div>
@@ -63,9 +64,6 @@ const CustomTooltip = ({ active, payload, label }) => {
           }
           if (entry.dataKey === 'smile' && entry.value != null) {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Smile : ${formatPercent(entry.value)}`}</div>
-          }
-          if (entry.dataKey === 'audio' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Audio : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'pauseMarker' && entry.value != null) {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Pause detected`}</div>
@@ -471,11 +469,6 @@ export default function App() {
   const coachingCards = reportData && !reportData.empty
     ? generateCoachingCards(reportData.sessionData || [], reportData.signalEvents || [])
     : []
-  const eventLines = reportTimeline.flatMap(point =>
-    EVENT_MARKERS
-      .filter(marker => point[marker.key] != null)
-      .map(marker => ({ ...marker, seconds: point.seconds })),
-  )
 
   function toggleReportSeries(key) {
     setHiddenReportSeries(prev => ({ ...prev, [key]: !prev[key] }))
@@ -690,23 +683,14 @@ export default function App() {
                           tickFormatter={value => `${value}%`}
                         />
                         <Tooltip content={<CustomTooltip />} />
-                        {eventLines.map((event, index) => (
-                          <ReferenceLine
-                            key={`${event.key}-${event.seconds}-${index}`}
-                            x={event.seconds}
-                            yAxisId="percent"
-                            stroke={event.color}
-                            strokeOpacity={0.18}
-                            strokeWidth={1}
-                          />
-                        ))}
-                        <Line yAxisId="percent" name="Stress" type="monotone" dataKey="stress" stroke="#d2a630" strokeWidth={3} dot={false} hide={hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
-                        <Line yAxisId="percent" name="Smile" type="monotone" dataKey="smile" stroke="#3fb950" strokeWidth={2.4} dot={false} hide={hiddenReportSeries.smile} connectNulls strokeOpacity={0.95} />
-                        <Line yAxisId="percent" name="Tension" type="monotone" dataKey="facialTension" stroke="#a371f7" strokeWidth={2.1} strokeDasharray="5 3" dot={false} hide={hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.8} />
-                        <Line yAxisId="percent" name="Audio" type="monotone" dataKey="audio" stroke="#58a6ff" strokeWidth={1.7} strokeDasharray="2 2" dot={false} hide={hiddenReportSeries.audio} connectNulls strokeOpacity={0.65} />
-                        <Line yAxisId="percent" name="Fear" type="monotone" dataKey="fear" stroke="#f85149" strokeWidth={1.6} dot={false} hide={hiddenReportSeries.fear} connectNulls strokeOpacity={0.55} />
-                        <Line yAxisId="percent" name="Anger" type="monotone" dataKey="anger" stroke="#ff7b72" strokeWidth={1.6} dot={false} hide={hiddenReportSeries.anger} connectNulls strokeOpacity={0.55} />
-                        <Line yAxisId="percent" name="Contempt" type="monotone" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.6} dot={false} hide={hiddenReportSeries.contempt} connectNulls strokeOpacity={0.55} />
+                        <Line yAxisId="percent" name="Stress detector" type="linear" dataKey="stress" stroke="#d2a630" strokeWidth={3} dot={false} hide={hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
+                        <Line yAxisId="percent" name="Audio level" type="linear" dataKey="audio" stroke="#58a6ff" strokeWidth={2.2} dot={false} hide={hiddenReportSeries.audio} connectNulls strokeOpacity={0.85} />
+                        <Line yAxisId="percent" name="Verbal disfluency" type="linear" dataKey="verbal" stroke="#22c55e" strokeWidth={2.2} dot={false} hide={hiddenReportSeries.verbal} connectNulls strokeOpacity={0.85} />
+                        <Line yAxisId="percent" name="Smile" type="linear" dataKey="smile" stroke="#3fb950" strokeWidth={1.8} dot={false} hide={hiddenReportSeries.smile} connectNulls strokeOpacity={0.65} />
+                        <Line yAxisId="percent" name="Tension" type="linear" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.8} dot={false} hide={hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.65} />
+                        <Line yAxisId="percent" name="Fear" type="linear" dataKey="fear" stroke="#f85149" strokeWidth={1.5} dot={false} hide={hiddenReportSeries.fear} connectNulls strokeOpacity={0.55} />
+                        <Line yAxisId="percent" name="Anger" type="linear" dataKey="anger" stroke="#ff7b72" strokeWidth={1.5} dot={false} hide={hiddenReportSeries.anger} connectNulls strokeOpacity={0.55} />
+                        <Line yAxisId="percent" name="Contempt" type="linear" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.5} dot={false} hide={hiddenReportSeries.contempt} connectNulls strokeOpacity={0.55} />
                       </ComposedChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 18px 0 28px', alignItems: 'center' }}>
@@ -737,7 +721,7 @@ export default function App() {
                         )
                       })}
                       <span style={{ marginLeft: 'auto', color: '#666', fontSize: 10 }}>
-                        Faint vertical lines mark events
+                        Click chips to show or hide lines
                       </span>
                     </div>
                   </div>
