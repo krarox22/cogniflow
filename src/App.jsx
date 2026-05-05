@@ -4,7 +4,7 @@ import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, Cartes
 import { questions } from './questions'
 import { useEmotionEngine } from './hooks/useEmotionEngine'
 import { buildUnifiedTimeline, generateCoachingCards } from './utils/reportTimeline'
-import { computeStressScore } from './utils/stressIndex'
+import { computeStressScore, smoothStress } from './utils/stressIndex'
 import './App.css'
 
 function formatTime(seconds) {
@@ -31,6 +31,8 @@ const DEFAULT_HIDDEN_REPORT_SERIES = {
   anger: true,
   contempt: true,
 }
+
+const STRESS_SMOOTHING_ALPHA = 0.25
 
 function formatPercent(value) {
   return `${Math.round(value)}%`
@@ -209,12 +211,13 @@ export default function App() {
             const dt = Math.min(dtRaw, 100)
 
             setStressScore(prev => {
-              const result = computeStressScore(prev, {
+              const rawStress = computeStressScore(prev, {
                 emotions: emotionsRef.current,
                 audioLevel: level,
                 audioThreshold: audioThresholdRef.current,
                 dtMs: dt,
               })
+              const result = smoothStress(prev, rawStress, STRESS_SMOOTHING_ALPHA)
               stressRef.current = result
               return result
             })

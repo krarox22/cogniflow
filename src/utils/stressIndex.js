@@ -11,8 +11,10 @@ export function computeStressScore(prev, {
   audioLevel = 0,
   audioThreshold = 12,
   dtMs = 0,
+  quietRecoveryRate = 1.5,
+  maxDtMs = 100,
 }) {
-  const dt = Math.min(Math.max(dtMs, 0), 100)
+  const dt = Math.min(Math.max(dtMs, 0), maxDtMs)
   const timeScale = dt / 500
   const e = { ...DEFAULT_EMOTIONS, ...emotions }
 
@@ -26,7 +28,12 @@ export function computeStressScore(prev, {
     e.smile * 3
 
   const audioDelta = isSpeaking ? 2 + (audioLevel / 100) : 0
-  const quietRecovery = !isSpeaking && emotionDelta <= 0.25 ? -1.5 : 0
+  const quietRecovery = !isSpeaking && emotionDelta <= 0.25 ? -quietRecoveryRate : 0
 
   return clamp(prev + (emotionDelta + audioDelta + quietRecovery) * timeScale, 0, 100)
+}
+
+export function smoothStress(prev, raw, alpha = 0.25) {
+  const a = clamp(alpha, 0, 1)
+  return clamp(prev + (raw - prev) * a, 0, 100)
 }
