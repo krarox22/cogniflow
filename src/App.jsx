@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Scatter } from 'recharts'
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, ReferenceLine } from 'recharts'
 import { questions } from './questions'
 import { useEmotionEngine } from './hooks/useEmotionEngine'
 import { buildUnifiedTimeline, generateCoachingCards } from './utils/reportTimeline'
@@ -26,8 +26,15 @@ const DEFAULT_HIDDEN_REPORT_SERIES = {
   fear: true,
   anger: true,
   contempt: true,
-  audio: true,
 }
+
+const EVENT_MARKERS = [
+  { key: 'pauseMarker', label: 'Pause', color: '#fbbf24' },
+  { key: 'rushMarker', label: 'Rush', color: '#38bdf8' },
+  { key: 'freezeMarker', label: 'Freeze', color: '#ef4444' },
+  { key: 'disfluencyMarker', label: 'Disfluency', color: '#22c55e' },
+  { key: 'tenseDisfluencyMarker', label: 'Tense disfluency', color: '#ec4899' },
+]
 
 function formatPercent(value) {
   return `${Math.round(value)}%`
@@ -464,6 +471,11 @@ export default function App() {
   const coachingCards = reportData && !reportData.empty
     ? generateCoachingCards(reportData.sessionData || [], reportData.signalEvents || [])
     : []
+  const eventLines = reportTimeline.flatMap(point =>
+    EVENT_MARKERS
+      .filter(marker => point[marker.key] != null)
+      .map(marker => ({ ...marker, seconds: point.seconds })),
+  )
 
   function toggleReportSeries(key) {
     setHiddenReportSeries(prev => ({ ...prev, [key]: !prev[key] }))
@@ -678,18 +690,23 @@ export default function App() {
                           tickFormatter={value => `${value}%`}
                         />
                         <Tooltip content={<CustomTooltip />} />
-                        <Line yAxisId="percent" name="Stress" type="monotone" dataKey="stress" stroke="#d2a630" strokeWidth={2.8} dot={false} hide={hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
-                        <Line yAxisId="percent" name="Smile" type="monotone" dataKey="smile" stroke="#3fb950" strokeWidth={2} dot={false} hide={hiddenReportSeries.smile} connectNulls strokeOpacity={0.9} />
-                        <Line yAxisId="percent" name="Tension" type="monotone" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.8} strokeDasharray="5 3" dot={false} hide={hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.75} />
-                        <Line yAxisId="percent" name="Fear" type="monotone" dataKey="fear" stroke="#f85149" strokeWidth={1.4} dot={false} hide={hiddenReportSeries.fear} connectNulls strokeOpacity={0.5} />
-                        <Line yAxisId="percent" name="Anger" type="monotone" dataKey="anger" stroke="#ff7b72" strokeWidth={1.4} dot={false} hide={hiddenReportSeries.anger} connectNulls strokeOpacity={0.5} />
-                        <Line yAxisId="percent" name="Contempt" type="monotone" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.4} dot={false} hide={hiddenReportSeries.contempt} connectNulls strokeOpacity={0.5} />
-                        <Line yAxisId="percent" name="Audio" type="monotone" dataKey="audio" stroke="#58a6ff" strokeWidth={1.4} strokeDasharray="2 2" dot={false} hide={hiddenReportSeries.audio} connectNulls strokeOpacity={0.55} />
-                        <Scatter yAxisId="percent" name="Pause" dataKey="pauseMarker" fill="#fbbf24" shape="circle" legendType="none" fillOpacity={0.75} />
-                        <Scatter yAxisId="percent" name="Rush" dataKey="rushMarker" fill="#38bdf8" shape="circle" legendType="none" fillOpacity={0.75} />
-                        <Scatter yAxisId="percent" name="Freeze" dataKey="freezeMarker" fill="#ef4444" shape="circle" legendType="none" fillOpacity={0.75} />
-                        <Scatter yAxisId="percent" name="Disfluency" dataKey="disfluencyMarker" fill="#22c55e" shape="circle" legendType="none" fillOpacity={0.75} />
-                        <Scatter yAxisId="percent" name="Tense Disfluency" dataKey="tenseDisfluencyMarker" fill="#ec4899" shape="circle" legendType="none" fillOpacity={0.75} />
+                        {eventLines.map((event, index) => (
+                          <ReferenceLine
+                            key={`${event.key}-${event.seconds}-${index}`}
+                            x={event.seconds}
+                            yAxisId="percent"
+                            stroke={event.color}
+                            strokeOpacity={0.18}
+                            strokeWidth={1}
+                          />
+                        ))}
+                        <Line yAxisId="percent" name="Stress" type="monotone" dataKey="stress" stroke="#d2a630" strokeWidth={3} dot={false} hide={hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
+                        <Line yAxisId="percent" name="Smile" type="monotone" dataKey="smile" stroke="#3fb950" strokeWidth={2.4} dot={false} hide={hiddenReportSeries.smile} connectNulls strokeOpacity={0.95} />
+                        <Line yAxisId="percent" name="Tension" type="monotone" dataKey="facialTension" stroke="#a371f7" strokeWidth={2.1} strokeDasharray="5 3" dot={false} hide={hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.8} />
+                        <Line yAxisId="percent" name="Audio" type="monotone" dataKey="audio" stroke="#58a6ff" strokeWidth={1.7} strokeDasharray="2 2" dot={false} hide={hiddenReportSeries.audio} connectNulls strokeOpacity={0.65} />
+                        <Line yAxisId="percent" name="Fear" type="monotone" dataKey="fear" stroke="#f85149" strokeWidth={1.6} dot={false} hide={hiddenReportSeries.fear} connectNulls strokeOpacity={0.55} />
+                        <Line yAxisId="percent" name="Anger" type="monotone" dataKey="anger" stroke="#ff7b72" strokeWidth={1.6} dot={false} hide={hiddenReportSeries.anger} connectNulls strokeOpacity={0.55} />
+                        <Line yAxisId="percent" name="Contempt" type="monotone" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.6} dot={false} hide={hiddenReportSeries.contempt} connectNulls strokeOpacity={0.55} />
                       </ComposedChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 18px 0 28px', alignItems: 'center' }}>
@@ -720,7 +737,7 @@ export default function App() {
                         )
                       })}
                       <span style={{ marginLeft: 'auto', color: '#666', fontSize: 10 }}>
-                        Event dots sit in the bottom band
+                        Faint vertical lines mark events
                       </span>
                     </div>
                   </div>
