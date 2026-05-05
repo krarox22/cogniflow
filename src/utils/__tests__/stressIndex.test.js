@@ -54,7 +54,7 @@ describe('computeStressScore', () => {
     expect(fromLaggedFrame).toBeCloseTo(fromNormalFrame, 5)
   })
 
-  it('allows quiet recovery rate to be tuned without changing tense-face response', () => {
+  it('allows quiet recovery to be tuned without changing tense-face response', () => {
     const defaultRecovery = computeStressScore(20, {
       emotions: calm,
       audioLevel: 0,
@@ -66,18 +66,38 @@ describe('computeStressScore', () => {
       audioLevel: 0,
       audioThreshold: 12,
       dtMs: 100,
-      quietRecoveryRate: 0.25,
+      quietRecoveryBase: 0.25,
+      quietRecoveryScale: 100,
     })
     const tenseQuiet = computeStressScore(20, {
       emotions: { ...calm, fear: 0.4, facial_tension: 0.3 },
       audioLevel: 0,
       audioThreshold: 12,
       dtMs: 100,
-      quietRecoveryRate: 10,
+      quietRecoveryBase: 10,
+      quietRecoveryScale: 1,
     })
 
     expect(subtleRecovery).toBeGreaterThan(defaultRecovery)
     expect(tenseQuiet).toBeGreaterThan(20)
+  })
+
+  it('uses asymmetric quiet recovery: high stress decays faster than low stress', () => {
+    const fromLowStress = computeStressScore(0, {
+      emotions: calm,
+      audioLevel: 0,
+      audioThreshold: 12,
+      dtMs: 100,
+    })
+    const fromHighStress = computeStressScore(100, {
+      emotions: calm,
+      audioLevel: 0,
+      audioThreshold: 12,
+      dtMs: 100,
+    })
+
+    expect(fromLowStress).toBe(0)
+    expect(fromHighStress).toBeCloseTo(98.9, 5)
   })
 })
 
