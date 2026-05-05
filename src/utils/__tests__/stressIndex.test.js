@@ -26,6 +26,17 @@ describe('computeStressScore', () => {
     expect(next).toBeGreaterThan(20)
   })
 
+  it('treats near-threshold ambient audio as quiet so stress can recover', () => {
+    const next = computeStressScore(40, {
+      emotions: calm,
+      audioLevel: 13,
+      audioThreshold: 12,
+      dtMs: 100,
+    })
+
+    expect(next).toBeLessThan(40)
+  })
+
   it('lets a smile soften stress when no tense signals are present', () => {
     const next = computeStressScore(20, {
       emotions: { ...calm, smile: 0.6 },

@@ -10,6 +10,7 @@ export function computeStressScore(prev, {
   emotions = DEFAULT_EMOTIONS,
   audioLevel = 0,
   audioThreshold = 12,
+  speakingMargin = 3,
   dtMs = 0,
   quietRecoveryBase = 1.5,
   quietRecoveryScale = 25,
@@ -19,7 +20,7 @@ export function computeStressScore(prev, {
   const timeScale = dt / 500
   const e = { ...DEFAULT_EMOTIONS, ...emotions }
 
-  const isSpeaking = audioLevel > audioThreshold
+  const isSpeaking = audioLevel > audioThreshold + speakingMargin
 
   const emotionDelta =
     e.fear * 5 +
