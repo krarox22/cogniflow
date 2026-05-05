@@ -211,15 +211,14 @@ export default function App() {
             const dt = Math.min(dtRaw, 100)
 
             setStressScore(prev => {
-              const rawStress = computeStressScore(prev, {
-                emotions: emotionsRef.current,
+              const next = computeStressScore(prev, {
+                emotions: emotionsRef.current || {},
                 audioLevel: level,
                 audioThreshold: audioThresholdRef.current,
                 dtMs: dt,
               })
-              const result = smoothStress(prev, rawStress, STRESS_SMOOTHING_ALPHA)
-              stressRef.current = result
-              return result
+              stressRef.current = next
+              return next
             })
           }
           animId = requestAnimationFrame(updateAudio)
@@ -384,11 +383,17 @@ export default function App() {
     const intervalId = setInterval(() => {
       sessionTimeRef.current += 2
       setSessionTime(sessionTimeRef.current)
+      const em = emotionsRef.current || {}
       sessionDataRef.current.push({
         time: formatTime(sessionTimeRef.current),
         stress: Math.round(stressRef.current),
         blinks: blinkCountRef.current,
-        audioLevel: Math.round(audioLevelRef.current),
+        audio: Math.round(audioLevelRef.current),
+        smile: em.smile || 0,
+        fear: em.fear || 0,
+        anger: em.anger|| 0,
+        contempt: em.contempt || 0,
+        facialTension: em.facial_tension || 0,
       })
     }, 2000)
     return () => clearInterval(intervalId)
@@ -673,24 +678,17 @@ export default function App() {
                           domain={['dataMin', 'dataMax']}
                           tickFormatter={value => formatTime(Math.round(value))}
                         />
-                        <YAxis
-                          yAxisId="percent"
-                          stroke="#666"
-                          fontSize={10}
-                          tickLine={false}
-                          axisLine={false}
-                          domain={[0, 100]}
-                          tickFormatter={value => `${value}%`}
-                        />
+                <YAxis yAxisId="stress" stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} tickFormatter={value => `${value}%`} />
+                <YAxis yAxisId="signals" orientation="right" stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} tickFormatter={value => `${value}%`} />
                         <Tooltip content={<CustomTooltip />} />
-                        <Line yAxisId="percent" name="Stress detector" type="linear" dataKey="stress" stroke="#d2a630" strokeWidth={3} dot={false} hide={hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
-                        <Line yAxisId="percent" name="Audio level" type="linear" dataKey="audio" stroke="#58a6ff" strokeWidth={2.2} dot={false} hide={hiddenReportSeries.audio} connectNulls strokeOpacity={0.85} />
-                        <Line yAxisId="percent" name="Verbal disfluency" type="linear" dataKey="verbal" stroke="#22c55e" strokeWidth={2.2} dot={false} hide={hiddenReportSeries.verbal} connectNulls strokeOpacity={0.85} />
-                        <Line yAxisId="percent" name="Smile" type="linear" dataKey="smile" stroke="#3fb950" strokeWidth={1.8} dot={false} hide={hiddenReportSeries.smile} connectNulls strokeOpacity={0.65} />
-                        <Line yAxisId="percent" name="Tension" type="linear" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.8} dot={false} hide={hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.65} />
-                        <Line yAxisId="percent" name="Fear" type="linear" dataKey="fear" stroke="#f85149" strokeWidth={1.5} dot={false} hide={hiddenReportSeries.fear} connectNulls strokeOpacity={0.55} />
-                        <Line yAxisId="percent" name="Anger" type="linear" dataKey="anger" stroke="#ff7b72" strokeWidth={1.5} dot={false} hide={hiddenReportSeries.anger} connectNulls strokeOpacity={0.55} />
-                        <Line yAxisId="percent" name="Contempt" type="linear" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.5} dot={false} hide={hiddenReportSeries.contempt} connectNulls strokeOpacity={0.55} />
+                <Line isAnimationActive={false} yAxisId="stress" name="Stress detector" type="linear" dataKey="stress" stroke="#d2a630" strokeWidth={3} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Audio level" type="linear" dataKey="audio" stroke="#58a6ff" strokeWidth={2.2} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.audio} connectNulls strokeOpacity={0.85} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Verbal disfluency" type="linear" dataKey="verbal" stroke="#22c55e" strokeWidth={2.2} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.verbal} connectNulls strokeOpacity={0.85} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Smile" type="linear" dataKey="smile" stroke="#3fb950" strokeWidth={1.8} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.smile} connectNulls strokeOpacity={0.65} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Tension" type="linear" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.8} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.65} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Fear" type="linear" dataKey="fear" stroke="#f85149" strokeWidth={1.5} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.fear} connectNulls strokeOpacity={0.55} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Anger" type="linear" dataKey="anger" stroke="#ff7b72" strokeWidth={1.5} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.anger} connectNulls strokeOpacity={0.55} />
+                <Line isAnimationActive={false} yAxisId="signals" name="Contempt" type="linear" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.5} dot={reportTimeline.length < 2} hide={!!hiddenReportSeries.contempt} connectNulls strokeOpacity={0.55} />
                       </ComposedChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 18px 0 28px', alignItems: 'center' }}>

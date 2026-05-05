@@ -13,17 +13,22 @@ const avg = (a = 0, b = 0) => (a + b) / 2
 export function computeEmotions(bs = {}) {
   const smile = avg(bs.mouthSmileLeft, bs.mouthSmileRight)
 
+  // mouthStretch (risorius) and eyeSquint also fire during a broad/Duchenne
+  // smile, so gate their fear/anger contributions by (1 - smile) to prevent
+  // happy expressions from being misread as stress.
+  const smileGate = 1 - smile
+
   const fear = clamp(
     (bs.browInnerUp || 0) * 0.40 +
     avg(bs.eyeWideLeft, bs.eyeWideRight) * 0.30 +
-    avg(bs.mouthStretchLeft, bs.mouthStretchRight) * 0.30,
+    avg(bs.mouthStretchLeft, bs.mouthStretchRight) * smileGate * 0.30,
     0, 1,
   )
 
   const anger = clamp(
     avg(bs.browDownLeft, bs.browDownRight) * 0.40 +
     avg(bs.noseSneerLeft, bs.noseSneerRight) * 0.30 +
-    avg(bs.eyeSquintLeft, bs.eyeSquintRight) * 0.15,
+    avg(bs.eyeSquintLeft, bs.eyeSquintRight) * smileGate * 0.15,
     0, 1,
   )
 
@@ -33,7 +38,7 @@ export function computeEmotions(bs = {}) {
     0, 1,
   )
 
-  const facial_tension = clamp(fear * 0.6 + anger * 0.3 + contempt * 0.1, 0, 1)
+  const facial_tension = clamp(fear * 0.6 + anger * 0.4 + contempt * 0.1, 0, 1)
 
   return { smile, fear, anger, contempt, facial_tension }
 }
@@ -49,6 +54,7 @@ export function smoothEmotions(prev, current) {
   const out = {}
   for (const k of KEYS) {
     out[k] = 0.8 * (prev[k] ?? 0) + 0.2 * (current[k] ?? 0)
+    
   }
   return out
 }

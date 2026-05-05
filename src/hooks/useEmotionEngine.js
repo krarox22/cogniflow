@@ -228,8 +228,9 @@ export function useEmotionEngine({ streamRef, currentQuestionTitle }) {
       tier2Ref.current.postMessage({ type: 'END_SESSION' })
     })
 
+    let timeoutId
     const timeoutPromise = new Promise((resolve) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         console.warn('[endSession] flush timed out after 15s — resolving anyway')
         resolve()
       }, 15000)
@@ -238,7 +239,10 @@ export function useEmotionEngine({ streamRef, currentQuestionTitle }) {
     endingPromiseRef.current = Promise.race([
       Promise.all([tier1Promise, tier2Promise]),
       timeoutPromise,
-    ]).then(() => ({ signalEvents: signalEventsRef.current }))
+    ]).then(() => {
+      clearTimeout(timeoutId)
+      return { signalEvents: signalEventsRef.current }
+    })
 
     return endingPromiseRef.current
   }

@@ -90,6 +90,30 @@ describe('computeEmotions', () => {
     expect(e.fear).toBe(0)
     expect(e.anger).toBe(0)
   })
+
+  it('suppresses mouthStretch contribution to fear when smiling', () => {
+    const noSmile = computeEmotions(bs({
+      mouthStretchLeft: 1, mouthStretchRight: 1,
+    }))
+    const fullSmile = computeEmotions(bs({
+      mouthSmileLeft: 1, mouthSmileRight: 1,
+      mouthStretchLeft: 1, mouthStretchRight: 1,
+    }))
+    expect(noSmile.fear).toBeCloseTo(0.30, 5)
+    expect(fullSmile.fear).toBeCloseTo(0, 5)
+  })
+
+  it('suppresses eyeSquint contribution to anger when smiling (Duchenne smile)', () => {
+    const noSmile = computeEmotions(bs({
+      eyeSquintLeft: 1, eyeSquintRight: 1,
+    }))
+    const fullSmile = computeEmotions(bs({
+      mouthSmileLeft: 1, mouthSmileRight: 1,
+      eyeSquintLeft: 1, eyeSquintRight: 1,
+    }))
+    expect(noSmile.anger).toBeCloseTo(0.15, 5)
+    expect(fullSmile.anger).toBeCloseTo(0, 5)
+  })
 })
 
 describe('smoothEmotions', () => {

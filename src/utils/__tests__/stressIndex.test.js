@@ -3,49 +3,67 @@ import { computeStressScore, smoothStress } from '../stressIndex.js'
 
 const calm = { smile: 0, fear: 0, anger: 0, contempt: 0, facial_tension: 0 }
 
-describe('computeStressScore', () => {
-  it('raises stress from facial tension even while the room is quiet', () => {
-    const next = computeStressScore(20, {
-      emotions: { ...calm, fear: 0.4, facial_tension: 0.3 },
+describe('computeStressScore (target-tracking)', () => {
+  it('drifts upward when emotions imply higher stress than current', () => {
+    const next = computeStressScore(0, {
+      emotions: { ...calm, fear: 0.6, facial_tension: 0.4 },
       audioLevel: 0,
       audioThreshold: 12,
       dtMs: 100,
     })
-
-    expect(next).toBeGreaterThan(20)
+    expect(next).toBeGreaterThan(0)
   })
 
-  it('raises stress from normal speaking above the calibrated threshold', () => {
-    const next = computeStressScore(20, {
+  it('drifts upward when speaking above threshold', () => {
+    const next = computeStressScore(0, {
       emotions: calm,
       audioLevel: 18,
       audioThreshold: 12,
       dtMs: 100,
     })
-
-    expect(next).toBeGreaterThan(20)
+    expect(next).toBeGreaterThan(0)
   })
 
-  it('treats near-threshold ambient audio as quiet so stress can recover', () => {
+  it('drifts DOWN when emotions go calm after a stressful peak (regression: no ratchet)', () => {
+    const next = computeStressScore(80, {
+      emotions: calm,
+      audioLevel: 0,
+      audioThreshold: 12,
+      dtMs: 100,
+    })
+    expect(next).toBeLessThan(80)
+  })
+
+  it('drifts DOWN even while speaking, when implied target is below current score', () => {
+    // Previously, isSpeaking blocked all decay. The new model relaxes toward
+    // the speaking baseline (~15) instead of monotonically climbing.
+    const next = computeStressScore(80, {
+      emotions: calm,
+      audioLevel: 30,
+      audioThreshold: 12,
+      dtMs: 100,
+    })
+    expect(next).toBeLessThan(80)
+  })
+
+  it('treats near-threshold ambient audio as quiet', () => {
     const next = computeStressScore(40, {
       emotions: calm,
       audioLevel: 13,
       audioThreshold: 12,
       dtMs: 100,
     })
-
     expect(next).toBeLessThan(40)
   })
 
-  it('lets a smile soften stress when no tense signals are present', () => {
-    const next = computeStressScore(20, {
-      emotions: { ...calm, smile: 0.6 },
+  it('lets a smile pull stress down even from a high baseline', () => {
+    const next = computeStressScore(80, {
+      emotions: { ...calm, smile: 0.9 },
       audioLevel: 0,
       audioThreshold: 12,
       dtMs: 100,
     })
-
-    expect(next).toBeLessThan(20)
+    expect(next).toBeLessThan(80)
   })
 
   it('clamps large elapsed time so tab lag cannot spike the score', () => {
@@ -61,54 +79,46 @@ describe('computeStressScore', () => {
       audioThreshold: 12,
       dtMs: 2000,
     })
-
     expect(fromLaggedFrame).toBeCloseTo(fromNormalFrame, 5)
   })
 
-  it('allows quiet recovery to be tuned without changing tense-face response', () => {
-    const defaultRecovery = computeStressScore(20, {
-      emotions: calm,
+  it('falls faster than it rises (fallTauMs < riseTauMs for quick recovery)', () => {
+    // rise: from 20 toward ~90 (gap ≈70), default riseTauMs=2000
+    const rising = computeStressScore(20, {
+      emotions: { ...calm, fear: 1, facial_tension: 0.6 },
       audioLevel: 0,
       audioThreshold: 12,
       dtMs: 100,
     })
-    const subtleRecovery = computeStressScore(20, {
-      emotions: calm,
+    // fall: from 80 toward ~10 (gap ≈70), default fallTauMs=1500
+    const falling = computeStressScore(80, {
+      emotions: { ...calm, fear: 1 / 6 },
       audioLevel: 0,
       audioThreshold: 12,
       dtMs: 100,
-      quietRecoveryBase: 0.25,
-      quietRecoveryScale: 100,
     })
-    const tenseQuiet = computeStressScore(20, {
-      emotions: { ...calm, fear: 0.4, facial_tension: 0.3 },
-      audioLevel: 0,
-      audioThreshold: 12,
-      dtMs: 100,
-      quietRecoveryBase: 10,
-      quietRecoveryScale: 1,
-    })
-
-    expect(subtleRecovery).toBeGreaterThan(defaultRecovery)
-    expect(tenseQuiet).toBeGreaterThan(20)
+    const riseDelta = rising - 20
+    const fallDelta = 80 - falling
+    expect(fallDelta).toBeGreaterThan(riseDelta)
   })
 
-  it('uses asymmetric quiet recovery: high stress decays faster than low stress', () => {
-    const fromLowStress = computeStressScore(0, {
-      emotions: calm,
-      audioLevel: 0,
+  it('clamps output to [0, 100]', () => {
+    const high = computeStressScore(100, {
+      emotions: { ...calm, fear: 1, anger: 1, facial_tension: 1 },
+      audioLevel: 80,
       audioThreshold: 12,
       dtMs: 100,
     })
-    const fromHighStress = computeStressScore(100, {
-      emotions: calm,
-      audioLevel: 0,
-      audioThreshold: 12,
-      dtMs: 100,
-    })
+    expect(high).toBeLessThanOrEqual(100)
+    expect(high).toBeGreaterThanOrEqual(0)
 
-    expect(fromLowStress).toBe(0)
-    expect(fromHighStress).toBeCloseTo(98.9, 5)
+    const low = computeStressScore(0, {
+      emotions: { ...calm, smile: 1 },
+      audioLevel: 0,
+      audioThreshold: 12,
+      dtMs: 100,
+    })
+    expect(low).toBeGreaterThanOrEqual(0)
   })
 })
 

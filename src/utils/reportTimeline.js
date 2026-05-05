@@ -66,6 +66,12 @@ export function buildUnifiedTimeline(sessionData = [], signalEvents = []) {
     const point = getPoint(points, seconds)
     point.time = sample.time || formatTime(seconds)
     point.stress = Number.isFinite(sample.stress) ? sample.stress : Number(sample.stress) || 0
+    if (typeof sample.audio === 'number') point.audio = sample.audio
+    if (typeof sample.smile === 'number') point.smile = percent(sample.smile)
+    if (typeof sample.fear === 'number') point.fear = percent(sample.fear)
+    if (typeof sample.anger === 'number') point.anger = percent(sample.anger)
+    if (typeof sample.contempt === 'number') point.contempt = percent(sample.contempt)
+    if (typeof sample.facialTension === 'number') point.facialTension = percent(sample.facialTension)
   }
 
   for (const event of signalEvents) {
@@ -96,14 +102,32 @@ export function buildUnifiedTimeline(sessionData = [], signalEvents = []) {
   }
 
   const timeline = [...points.values()].sort((a, b) => a.seconds - b.seconds)
-  let lastStress = null
+  
+  // The Comprehensive Backfill - No 'null' gaps allowed!
+  const lastVals = {
+    stress: null,
+    audio: null,
+    verbal: null,
+    smile: null,
+    facialTension: null,
+    fear: null,
+    anger: null,
+    contempt: null,
+  }
+
   for (const point of timeline) {
-    if (point.stress != null) {
-      lastStress = point.stress
-    } else if (lastStress != null) {
-      point.stress = lastStress
+    for (const key of Object.keys(lastVals)) {
+      // If we have a new value, remember it
+      if (point[key] != null) {
+        lastVals[key] = point[key]
+      } 
+      // If we have a gap, fill it with the last known value
+      else if (lastVals[key] != null) {
+        point[key] = lastVals[key]
+      }
     }
   }
+
   return timeline
 }
 
