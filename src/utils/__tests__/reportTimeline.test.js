@@ -49,17 +49,17 @@ describe('buildUnifiedTimeline', () => {
       stress: 20,
     })
     expect(timeline.find(d => d.seconds === 3)).toMatchObject({
-      facialTension: 62,
-      pauseMarker: 8,
+      facialTension: 0.62,
+      pauseMarker: 0.08,
     })
     expect(timeline.find(d => d.seconds === 5)).toMatchObject({
-      rushMarker: 14,
-      freezeMarker: 20,
+      rushMarker: 0.14,
+      freezeMarker: 0.20,
     })
     expect(timeline.find(d => d.seconds === 6)).toMatchObject({
       stress: 35,
-      facialTension: 45,
-      disfluencyMarker: 26,
+      facialTension: 0.45,
+      disfluencyMarker: 0.26,
     })
   })
 
@@ -69,6 +69,44 @@ describe('buildUnifiedTimeline', () => {
     ])
 
     expect(timeline.find(d => d.seconds === 3).disfluencyMarker).toBeNull()
+  })
+
+  it('populates smile/fear/anger/contempt/audio per matched second', () => {
+    const timeline = buildUnifiedTimeline(
+      [
+        { time: '00:02', stress: 25 },
+        { time: '00:04', stress: 30 },
+      ],
+      [{
+        id: 'sig-1',
+        timestamp: 2000,
+        signals: {
+          facial_tension: 0.4,
+          cadence_gap: false,
+          speech_rush: false,
+          physical_freeze: false,
+          linguistic_disfluency: null,
+          smile: 0.1,
+          fear: 0.5,
+          anger: 0.2,
+          contempt: 0.05,
+          raw: { audio: { rms: 0.32, isSpeaking: true } },
+        },
+      }],
+    )
+    const at2s = timeline.find(p => p.seconds === 2)
+    expect(at2s.smile).toBeCloseTo(0.1, 5)
+    expect(at2s.fear).toBeCloseTo(0.5, 5)
+    expect(at2s.anger).toBeCloseTo(0.2, 5)
+    expect(at2s.contempt).toBeCloseTo(0.05, 5)
+    expect(at2s.audio).toBeCloseTo(0.32, 5)
+  })
+
+  it('keeps emotion/audio fields null when no event covers that second', () => {
+    const timeline = buildUnifiedTimeline([{ time: '00:00', stress: 10 }], [])
+    expect(timeline[0].smile).toBeNull()
+    expect(timeline[0].fear).toBeNull()
+    expect(timeline[0].audio).toBeNull()
   })
 })
 

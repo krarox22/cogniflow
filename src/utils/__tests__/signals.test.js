@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clamp, computeFacialTension, updateCadenceState, updateFreezeCount, computeDisfluency } from '../signals.js'
+import { clamp, updateCadenceState, updateFreezeCount, computeDisfluency } from '../signals.js'
 
 describe('clamp', () => {
   it('clamps values above max to max', () => {
@@ -10,29 +10,6 @@ describe('clamp', () => {
   })
   it('passes through values within range unchanged', () => {
     expect(clamp(0.5, 0, 1)).toBe(0.5)
-  })
-})
-
-describe('computeFacialTension', () => {
-  it('weights fearful at 0.6, angry at 0.3, disgusted at 0.1', () => {
-    const fer = { fearful: 1, angry: 0, disgusted: 0, neutral: 0, happy: 0, sad: 0, surprised: 0 }
-    expect(computeFacialTension(fer)).toBeCloseTo(0.6)
-  })
-
-  it('combines all three contributing emotions', () => {
-    const fer = { fearful: 0.5, angry: 0.5, disgusted: 0.5, neutral: 0, happy: 0, sad: 0, surprised: 0 }
-    expect(computeFacialTension(fer)).toBeCloseTo(0.5)
-  })
-
-  it('clamps output to 0–1', () => {
-    const fer = { fearful: 1, angry: 1, disgusted: 1, neutral: 0, happy: 0, sad: 0, surprised: 0 }
-    // toBeCloseTo because 0.6+0.3+0.1 = 0.9999... in IEEE 754; clamp returns <1 without explicit boundary check
-    expect(computeFacialTension(fer)).toBeCloseTo(1)
-  })
-
-  it('returns 0 for a fully neutral face', () => {
-    const fer = { fearful: 0, angry: 0, disgusted: 0, neutral: 1, happy: 0, sad: 0, surprised: 0 }
-    expect(computeFacialTension(fer)).toBe(0)
   })
 })
 

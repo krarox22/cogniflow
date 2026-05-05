@@ -12,10 +12,6 @@ export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
 
-export function computeFacialTension(fer) {
-  return clamp(fer.fearful * 0.6 + fer.angry * 0.3 + fer.disgusted * 0.1, 0, 1)
-}
-
 /**
  * Pure — takes state in, returns new state + signals.
  * Caller (aggregatorWorker) owns the mutable state object.

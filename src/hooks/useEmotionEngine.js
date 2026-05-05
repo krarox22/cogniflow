@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { computeDisfluency } from '../utils/signals'
+import { computeEmotions, smoothEmotions } from '../utils/emotionFormulas'
 
-export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQuestionTitle, audioThresholdRef }) {
+const WORKER_POST_INTERVAL_MS = 100
+
+export function useEmotionEngine({ streamRef, currentQuestionTitle }) {
   const [tier1Ready, setTier1Ready] = useState(false)
   const [tier2Ready, setTier2Ready] = useState(false)
   const [tier2StartOffsetMs, setTier2StartOffsetMs] = useState(null)
@@ -14,43 +17,14 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   const endingRef = useRef(false)
   const endingPromiseRef = useRef(null)
 
-  const frameIntervalRef = useRef(null)
+  const smoothedRef = useRef(null)
+  const emotionsRef = useRef({ smile: 0, fear: 0, anger: 0, contempt: 0, facial_tension: 0 })
+  const lastEmotionPostRef = useRef(0)
+
   const audioFlushIntervalRef = useRef(null)
   const audioContextRef = useRef(null)
   const audioWorkletNodeRef = useRef(null)
   const speechRecognitionRef = useRef(null)
-
-  // Lobby warmup — create workers on mount
-  useEffect(() => {
-    const aggregator = new Worker(
-      new URL('../workers/aggregatorWorker.js', import.meta.url),
-      { type: 'module' }
-    )
-    aggregatorRef.current = aggregator
-    aggregator.onmessage = handleAggregatorMessage
-    aggregator.postMessage({ type: 'LOAD_MODELS' })
-
-    const tier2 = new Worker(
-      new URL('../workers/tier2Worker.js', import.meta.url),
-      { type: 'module' }
-    )
-    tier2Ref.current = tier2
-    tier2.onmessage = handleTier2Message
-    tier2.postMessage({ type: 'LOAD_MODELS' })
-
-    return () => {
-      aggregator.terminate()
-      tier2.terminate()
-    }
-  }, [])
-
-  // AudioWorklet cleanup on unmount
-  useEffect(() => {
-    return () => {
-      audioWorkletNodeRef.current?.disconnect()
-      audioContextRef.current?.close()
-    }
-  }, [])
 
   function handleAggregatorMessage({ data }) {
     if (data.type === 'WORKER_READY') {
@@ -58,7 +32,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     } else if (data.type === 'SIGNAL_EVENT') {
       signalEventsRef.current.push(data.event)
     }
-    // FLUSH_COMPLETE is now handled by the temporary listener in endSession()
   }
 
   function handleTier2Message({ data }) {
@@ -71,30 +44,54 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
         pendingTier2StartRef.current = null
       }
     } else if (data.type === 'TRANSCRIPT_CHUNK') {
-      aggregatorRef.current.postMessage(data)   // relay verbatim
+      aggregatorRef.current.postMessage(data)
     }
-    // FLUSH_COMPLETE is now handled by the temporary listener in endSession()
   }
+
+  useEffect(() => {
+    const aggregator = new Worker(
+      new URL('../workers/aggregatorWorker.js', import.meta.url),
+      { type: 'module' },
+    )
+    aggregatorRef.current = aggregator
+    aggregator.onmessage = handleAggregatorMessage
+    aggregator.postMessage({ type: 'LOAD_MODELS' })
+
+    const tier2 = new Worker(
+      new URL('../workers/tier2Worker.js', import.meta.url),
+      { type: 'module' },
+    )
+    tier2Ref.current = tier2
+    tier2.onmessage = handleTier2Message
+    tier2.postMessage({ type: 'LOAD_MODELS' })
+
+    return () => {
+      aggregator.terminate()
+      tier2.terminate()
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      audioWorkletNodeRef.current?.disconnect()
+      audioContextRef.current?.close()
+    }
+  }, [])
 
   async function setupAudioWorklet() {
     if (!streamRef.current) return
-
     let audioCtx = null
     try {
       audioCtx = new AudioContext()
       audioContextRef.current = audioCtx
-
       const processorUrl = new URL('../workers/pcmCaptureProcessor.js', import.meta.url).href
       await audioCtx.audioWorklet.addModule(processorUrl)
-
       const source = audioCtx.createMediaStreamSource(streamRef.current)
       const workletNode = new AudioWorkletNode(audioCtx, 'pcm-capture')
       audioWorkletNodeRef.current = workletNode
-
       workletNode.port.onmessage = ({ data }) => {
         if (data.type !== 'PCM_FLUSH') return
         if (!sessionStartTimeRef.current || !tier2Ref.current) return
-
         tier2Ref.current.postMessage(
           {
             type: 'AUDIO_CHUNK',
@@ -103,10 +100,9 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
             audioContextTime: audioCtx.currentTime,
             wallTime: performance.now() - sessionStartTimeRef.current,
           },
-          [data.pcm.buffer]
+          [data.pcm.buffer],
         )
       }
-
       source.connect(workletNode)
     } catch (err) {
       console.warn('[useEmotionEngine] AudioWorklet setup failed:', err)
@@ -119,6 +115,8 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   function startSession(sessionStartTime) {
     signalEventsRef.current = []
     sessionStartTimeRef.current = sessionStartTime
+    smoothedRef.current = null
+    lastEmotionPostRef.current = 0
 
     aggregatorRef.current.postMessage({ type: 'START_SESSION', sessionStartTime })
 
@@ -131,7 +129,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
   }
 
   function startCapture() {
-    startFrameCapture()
     void setupAudioWorklet()
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -142,14 +139,10 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       recognition.onresult = (event) => {
         if (!sessionStartTimeRef.current) return
         const lastResult = event.results[event.results.length - 1]
-
         const text = lastResult[0].transcript.trim()
         if (!text) return
-
-        // For interim results, we just compute disfluency and patch the last 1.5 seconds.
         const disfluency = computeDisfluency(text)
         const now = performance.now() - sessionStartTimeRef.current
-
         aggregatorRef.current.postMessage({
           type: 'TRANSCRIPT_CHUNK',
           start: Math.max(0, now - 1500),
@@ -161,12 +154,9 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       }
       recognition.onend = () => {
         if (sessionStartTimeRef.current && speechRecognitionRef.current) {
-          try {
-            recognition.start()
-          } catch (err) { }
+          try { recognition.start() } catch { /* Browser may reject an immediate restart. */ }
         }
       }
-
       try {
         recognition.start()
         speechRecognitionRef.current = recognition
@@ -176,28 +166,22 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     }
   }
 
-  function startFrameCapture() {
-    if (frameIntervalRef.current) clearInterval(frameIntervalRef.current)
-    frameIntervalRef.current = setInterval(async () => {
-      if (!canvasRef.current || !sessionStartTimeRef.current) return
-      try {
-        const frame = await createImageBitmap(canvasRef.current)
-        aggregatorRef.current.postMessage(
-          {
-            type: 'FRAME_DATA',
-            frame,
-            audio: {
-              rms: (audioLevelRef.current ?? 0) / 100,
-              isSpeaking: (audioLevelRef.current ?? 0) > (audioThresholdRef?.current ?? 12),
-            },
-            rawTimestamp: performance.now(),
-          },
-          [frame]
-        )
-      } catch (_) {
-        // Canvas may not be ready — skip this frame
-      }
-    }, 500)
+  function pushBlendshapes(blendshapes, audio, rawTimestamp) {
+    const raw = computeEmotions(blendshapes || {})
+    const smoothed = smoothEmotions(smoothedRef.current, raw)
+    smoothedRef.current = smoothed
+    emotionsRef.current = smoothed
+
+    if (!sessionStartTimeRef.current) return
+    if (rawTimestamp - lastEmotionPostRef.current < WORKER_POST_INTERVAL_MS) return
+    lastEmotionPostRef.current = rawTimestamp
+
+    aggregatorRef.current?.postMessage({
+      type: 'FRAME_DATA',
+      emotions: smoothed,
+      audio,
+      rawTimestamp,
+    })
   }
 
   async function endSession() {
@@ -205,9 +189,7 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     endingRef.current = true
     pendingTier2StartRef.current = null
 
-    clearInterval(frameIntervalRef.current)
     clearInterval(audioFlushIntervalRef.current)
-    frameIntervalRef.current = null
     audioFlushIntervalRef.current = null
 
     audioWorkletNodeRef.current?.disconnect()
@@ -222,7 +204,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
 
     console.log('[endSession] posting END_SESSION to both workers simultaneously')
 
-    // Attach temporary listener to Tier 1
     const tier1Promise = new Promise((resolve) => {
       const handler = (e) => {
         if (e.data?.type === 'FLUSH_COMPLETE') {
@@ -235,7 +216,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       aggregatorRef.current.postMessage({ type: 'END_SESSION' })
     })
 
-    // Attach temporary listener to Tier 2
     const tier2Promise = new Promise((resolve) => {
       const handler = (e) => {
         if (e.data?.type === 'FLUSH_COMPLETE') {
@@ -248,7 +228,6 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       tier2Ref.current.postMessage({ type: 'END_SESSION' })
     })
 
-    // 15-second failsafe timeout
     const timeoutPromise = new Promise((resolve) => {
       setTimeout(() => {
         console.warn('[endSession] flush timed out after 15s — resolving anyway')
@@ -256,45 +235,37 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
       }, 15000)
     })
 
-    // Race the parallel workers against the timeout
     endingPromiseRef.current = Promise.race([
       Promise.all([tier1Promise, tier2Promise]),
       timeoutPromise,
-    ]).then(() => {
-      // Ensure the final promise resolves with the requested context
-      return { signalEvents: signalEventsRef.current }
-    })
+    ]).then(() => ({ signalEvents: signalEventsRef.current }))
 
     return endingPromiseRef.current
   }
 
   async function resetEngine() {
     if (endingRef.current && endingPromiseRef.current) {
-      try { await endingPromiseRef.current } catch (_) { }
+      try { await endingPromiseRef.current } catch { /* Reset should continue after a failed flush. */ }
     }
-
-    clearInterval(frameIntervalRef.current)
     clearInterval(audioFlushIntervalRef.current)
-    frameIntervalRef.current = null
     audioFlushIntervalRef.current = null
-
     audioWorkletNodeRef.current?.disconnect()
     audioContextRef.current?.close()
     audioWorkletNodeRef.current = null
     audioContextRef.current = null
-
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.stop()
       speechRecognitionRef.current = null
     }
-
     signalEventsRef.current = []
     sessionStartTimeRef.current = null
     pendingTier2StartRef.current = null
     endingRef.current = false
     endingPromiseRef.current = null
+    smoothedRef.current = null
+    lastEmotionPostRef.current = 0
+    emotionsRef.current = { smile: 0, fear: 0, anger: 0, contempt: 0, facial_tension: 0 }
     setTier2StartOffsetMs(null)
-
     aggregatorRef.current.postMessage({ type: 'RESET' })
     tier2Ref.current.postMessage({ type: 'RESET' })
   }
@@ -305,6 +276,8 @@ export function useEmotionEngine({ streamRef, audioLevelRef, canvasRef, currentQ
     tier2StartOffsetMs,
     startSession,
     startCapture,
+    pushBlendshapes,
+    emotionsRef,
     endSession,
     resetEngine,
     signalEventsRef,

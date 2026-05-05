@@ -22,7 +22,22 @@ const CustomTooltip = ({ active, payload, label }) => {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Stress : ${Math.round(entry.value)}`}</div>
           }
           if (entry.dataKey === 'facialTension' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Facial tension : ${Math.round(entry.value)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Facial tension : ${Math.round(entry.value * 100)}%`}</div>
+          }
+          if (entry.dataKey === 'fear' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Fear : ${entry.value.toFixed(2)}`}</div>
+          }
+          if (entry.dataKey === 'anger' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Anger : ${entry.value.toFixed(2)}`}</div>
+          }
+          if (entry.dataKey === 'contempt' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Contempt : ${entry.value.toFixed(2)}`}</div>
+          }
+          if (entry.dataKey === 'smile' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Smile : ${entry.value.toFixed(2)}`}</div>
+          }
+          if (entry.dataKey === 'audio' && entry.value != null) {
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Audio : ${entry.value.toFixed(2)}`}</div>
           }
           if (entry.dataKey === 'pauseMarker' && entry.value != null) {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Pause detected`}</div>
@@ -59,6 +74,7 @@ export default function App() {
   const audioThresholdRef = useRef(12)
   const audioLevelRef = useRef(0)
   const lastScoreUpdate = useRef(0)
+  const lastStressUpdateRef = useRef(performance.now())
   const calibStartRef = useRef(null)
   const calibPhaseRef = useRef('idle')
   const sessionTimeRef = useRef(0)
@@ -67,6 +83,8 @@ export default function App() {
   const lastBlinkCountRef = useRef(0)
   const sessionDataRef = useRef([])
   const startingRef = useRef(false)
+  const pushBlendshapesRef = useRef(null)
+  const startCaptureRef = useRef(null)
 
   const [phase, setPhase] = useState('LOBBY')
   const [cameraReady, setCameraReady] = useState(false)
@@ -96,16 +114,20 @@ export default function App() {
     tier2StartOffsetMs,
     startSession,
     startCapture,
+    pushBlendshapes,
+    emotionsRef,
     endSession,
     resetEngine,
     signalEventsRef,
   } = useEmotionEngine({
     streamRef,
-    audioLevelRef,
-    canvasRef,
     currentQuestionTitle: currentQuestion.title,
-    audioThresholdRef,
   })
+
+  useEffect(() => {
+    pushBlendshapesRef.current = pushBlendshapes
+    startCaptureRef.current = startCapture
+  }, [pushBlendshapes, startCapture])
 
   useEffect(() => {
     let animId
@@ -150,18 +172,28 @@ export default function App() {
           if (now - lastScoreUpdate.current > 500) {
             lastScoreUpdate.current = now
             setAudioLevel(level)
-            if (calibPhaseRef.current === 'ready') {
-              setStressScore(prev => {
-                const isLoud = level > audioThresholdRef.current + 3
-                lastBlinkCountRef.current = blinkCountRef.current
-                const rise = isLoud ? 2 + (level / 100) * 1 : 0
-                const decay = isLoud ? 1 : 6
-                const next = prev + rise - decay
-                const result = Math.max(0, Math.min(100, next))
-                stressRef.current = result
-                return result
-              })
-            }
+          }
+
+          if (calibPhaseRef.current === 'ready') {
+            const nowPerf = performance.now()
+            const dtRaw = nowPerf - lastStressUpdateRef.current
+            lastStressUpdateRef.current = nowPerf
+            const dt = Math.min(dtRaw, 100)
+            const timeScale = dt / 500
+
+            const isLoud = level > audioThresholdRef.current + 3
+            const isSilent = level < audioThresholdRef.current
+            const e = emotionsRef.current
+            const emotionDelta = e.fear * 4 + e.anger * 3 - e.smile * 3
+            const audioDelta = isLoud ? (2 + (level / 100)) : 0
+            const silenceDecay = isSilent ? -6 : (isLoud ? -1 : 0)
+
+            setStressScore(prev => {
+              const next = prev + (emotionDelta + audioDelta + silenceDecay) * timeScale
+              const result = Math.max(0, Math.min(100, next))
+              stressRef.current = result
+              return result
+            })
           }
           animId = requestAnimationFrame(updateAudio)
         }
@@ -188,7 +220,7 @@ export default function App() {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
     }
-  }, [])
+  }, [emotionsRef])
 
   useEffect(() => {
     if (!cameraReady) return
@@ -210,6 +242,7 @@ export default function App() {
           },
           runningMode: 'VIDEO',
           numFaces: 1,
+          outputFaceBlendshapes: true,
         })
 
 
@@ -248,6 +281,19 @@ export default function App() {
               const ear = Math.abs(lm[159].y - lm[145].y)
               const now = Date.now()
 
+              const blendshapeMap = {}
+              const categories = results.faceBlendshapes?.[0]?.categories || []
+              for (const c of categories) blendshapeMap[c.categoryName] = c.score
+
+              pushBlendshapesRef.current?.(
+                blendshapeMap,
+                {
+                  rms: (audioLevelRef.current ?? 0) / 100,
+                  isSpeaking: (audioLevelRef.current ?? 0) > (audioThresholdRef.current ?? 12),
+                },
+                performance.now(),
+              )
+
               if (calibPhaseRef.current === 'calibrating' && calibStartRef.current) {
                 earBufferRef.current.push(ear)
                 const elapsed = now - calibStartRef.current
@@ -273,9 +319,8 @@ export default function App() {
                   audioBufferRef.current = []
 
                   setPhase('INTERVIEWING')
-                  // Calibration complete — now start FER frame capture and audio worklet
-                  // so that FRAME_DATA only flows during the INTERVIEWING phase.
-                  startCapture()
+                  // Calibration complete — start the audio/transcript capture.
+                  startCaptureRef.current?.()
                 }
               } else if (calibPhaseRef.current === 'ready') {
                 if (ear < earThresholdRef.current && now - lastBlinkTime > 300) {
@@ -367,6 +412,7 @@ export default function App() {
     sessionTimeRef.current = 0
     stressRef.current = 0
     blinkCountRef.current = 0
+    lastStressUpdateRef.current = performance.now()
     lastBlinkCountRef.current = 0
     earBufferRef.current = []
     audioBufferRef.current = []
@@ -596,16 +642,22 @@ export default function App() {
                           domain={['dataMin', 'dataMax']}
                           tickFormatter={value => formatTime(Math.round(value))}
                         />
-                        <YAxis stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} />
+                        <YAxis yAxisId="stress" stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} />
+                        <YAxis yAxisId="signals" orientation="right" stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 1]} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend wrapperStyle={{ fontSize: 10, color: '#888', paddingTop: 8 }} />
-                        <Line name="Stress" type="monotone" dataKey="stress" stroke="#f59e0b" strokeWidth={3} dot={false} connectNulls activeDot={{ r: 6, fill: '#f59e0b', stroke: '#111', strokeWidth: 2 }} />
-                        <Line name="Facial tension" type="monotone" dataKey="facialTension" stroke="#a78bfa" strokeWidth={2} dot={false} connectNulls />
-                        <Scatter name="Pause" dataKey="pauseMarker" fill="#fbbf24" shape="circle" />
-                        <Scatter name="Rush" dataKey="rushMarker" fill="#38bdf8" shape="circle" />
-                        <Scatter name="Freeze" dataKey="freezeMarker" fill="#ef4444" shape="circle" />
-                        <Scatter name="Disfluency" dataKey="disfluencyMarker" fill="#22c55e" shape="circle" />
-                        <Scatter name="Tense Disfluency" dataKey="tenseDisfluencyMarker" fill="#ec4899" shape="circle" />
+                        <Line yAxisId="stress" name="Stress" type="monotone" dataKey="stress" stroke="#d2a630" strokeWidth={2.5} dot={false} connectNulls activeDot={{ r: 6, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
+                        <Line yAxisId="signals" name="Facial tension" type="monotone" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls />
+                        <Line yAxisId="signals" name="Fear" type="monotone" dataKey="fear" stroke="#f85149" strokeWidth={1.5} dot={false} connectNulls />
+                        <Line yAxisId="signals" name="Anger" type="monotone" dataKey="anger" stroke="#ff7b72" strokeWidth={1.5} dot={false} connectNulls />
+                        <Line yAxisId="signals" name="Contempt" type="monotone" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.5} dot={false} connectNulls />
+                        <Line yAxisId="signals" name="Smile" type="monotone" dataKey="smile" stroke="#3fb950" strokeWidth={1.5} dot={false} connectNulls />
+                        <Line yAxisId="signals" name="Audio level" type="monotone" dataKey="audio" stroke="#58a6ff" strokeWidth={1.5} strokeDasharray="2 2" dot={false} connectNulls />
+                        <Scatter yAxisId="signals" name="Pause" dataKey="pauseMarker" fill="#fbbf24" shape="circle" />
+                        <Scatter yAxisId="signals" name="Rush" dataKey="rushMarker" fill="#38bdf8" shape="circle" />
+                        <Scatter yAxisId="signals" name="Freeze" dataKey="freezeMarker" fill="#ef4444" shape="circle" />
+                        <Scatter yAxisId="signals" name="Disfluency" dataKey="disfluencyMarker" fill="#22c55e" shape="circle" />
+                        <Scatter yAxisId="signals" name="Tense Disfluency" dataKey="tenseDisfluencyMarker" fill="#ec4899" shape="circle" />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
