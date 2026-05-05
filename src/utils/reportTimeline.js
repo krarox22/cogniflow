@@ -1,9 +1,13 @@
 const MARKER_Y = {
-  pauseMarker: 0.08,
-  rushMarker: 0.14,
-  freezeMarker: 0.20,
-  disfluencyMarker: 0.26,
-  tenseDisfluencyMarker: 0.32,
+  pauseMarker: 4,
+  rushMarker: 7,
+  freezeMarker: 10,
+  disfluencyMarker: 13,
+  tenseDisfluencyMarker: 16,
+}
+
+function percent(value) {
+  return Math.max(0, Math.min(100, value * 100))
 }
 
 function formatTime(seconds) {
@@ -69,15 +73,15 @@ export function buildUnifiedTimeline(sessionData = [], signalEvents = []) {
     const signals = event?.signals || {}
 
     if (typeof signals.facial_tension === 'number') {
-      const tension = signals.facial_tension
+      const tension = percent(signals.facial_tension)
       point.facialTension = Math.max(point.facialTension ?? 0, tension)
     }
-    if (typeof signals.smile    === 'number') point.smile    = signals.smile
-    if (typeof signals.fear     === 'number') point.fear     = signals.fear
-    if (typeof signals.anger    === 'number') point.anger    = signals.anger
-    if (typeof signals.contempt === 'number') point.contempt = signals.contempt
+    if (typeof signals.smile    === 'number') point.smile    = percent(signals.smile)
+    if (typeof signals.fear     === 'number') point.fear     = percent(signals.fear)
+    if (typeof signals.anger    === 'number') point.anger    = percent(signals.anger)
+    if (typeof signals.contempt === 'number') point.contempt = percent(signals.contempt)
     const rms = signals.raw?.audio?.rms
-    if (typeof rms === 'number') point.audio = rms
+    if (typeof rms === 'number') point.audio = percent(rms)
     if (signals.cadence_gap) point.pauseMarker = MARKER_Y.pauseMarker
     if (signals.speech_rush) point.rushMarker = MARKER_Y.rushMarker
     if (signals.physical_freeze) point.freezeMarker = MARKER_Y.freezeMarker

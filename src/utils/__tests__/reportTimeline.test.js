@@ -49,17 +49,17 @@ describe('buildUnifiedTimeline', () => {
       stress: 20,
     })
     expect(timeline.find(d => d.seconds === 3)).toMatchObject({
-      facialTension: 0.62,
-      pauseMarker: 0.08,
+      facialTension: 62,
+      pauseMarker: 4,
     })
     expect(timeline.find(d => d.seconds === 5)).toMatchObject({
-      rushMarker: 0.14,
-      freezeMarker: 0.20,
+      rushMarker: 7,
+      freezeMarker: 10,
     })
     expect(timeline.find(d => d.seconds === 6)).toMatchObject({
       stress: 35,
-      facialTension: 0.45,
-      disfluencyMarker: 0.26,
+      facialTension: 45,
+      disfluencyMarker: 13,
     })
   })
 
@@ -95,11 +95,11 @@ describe('buildUnifiedTimeline', () => {
       }],
     )
     const at2s = timeline.find(p => p.seconds === 2)
-    expect(at2s.smile).toBeCloseTo(0.1, 5)
-    expect(at2s.fear).toBeCloseTo(0.5, 5)
-    expect(at2s.anger).toBeCloseTo(0.2, 5)
-    expect(at2s.contempt).toBeCloseTo(0.05, 5)
-    expect(at2s.audio).toBeCloseTo(0.32, 5)
+    expect(at2s.smile).toBeCloseTo(10, 5)
+    expect(at2s.fear).toBeCloseTo(50, 5)
+    expect(at2s.anger).toBeCloseTo(20, 5)
+    expect(at2s.contempt).toBeCloseTo(5, 5)
+    expect(at2s.audio).toBeCloseTo(32, 5)
   })
 
   it('keeps emotion/audio fields null when no event covers that second', () => {

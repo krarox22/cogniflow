@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Scatter, Legend } from 'recharts'
+import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Scatter } from 'recharts'
 import { questions } from './questions'
 import { useEmotionEngine } from './hooks/useEmotionEngine'
 import { buildUnifiedTimeline, generateCoachingCards } from './utils/reportTimeline'
@@ -12,6 +12,27 @@ function formatTime(seconds) {
   return `${m}:${s}`
 }
 
+const REPORT_SERIES = [
+  { key: 'stress', label: 'Stress', color: '#d2a630', primary: true },
+  { key: 'smile', label: 'Smile', color: '#3fb950', primary: true },
+  { key: 'facialTension', label: 'Tension', color: '#a371f7', primary: true },
+  { key: 'fear', label: 'Fear', color: '#f85149' },
+  { key: 'anger', label: 'Anger', color: '#ff7b72' },
+  { key: 'contempt', label: 'Contempt', color: '#79c0ff' },
+  { key: 'audio', label: 'Audio', color: '#58a6ff' },
+]
+
+const DEFAULT_HIDDEN_REPORT_SERIES = {
+  fear: true,
+  anger: true,
+  contempt: true,
+  audio: true,
+}
+
+function formatPercent(value) {
+  return `${Math.round(value)}%`
+}
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
@@ -19,25 +40,25 @@ const CustomTooltip = ({ active, payload, label }) => {
         <div style={{ marginBottom: '8px', color: '#fff' }}>{`Time ${formatTime(Math.round(label))}`}</div>
         {payload.map((entry, index) => {
           if (entry.dataKey === 'stress' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Stress : ${Math.round(entry.value)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Stress : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'facialTension' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Facial tension : ${Math.round(entry.value * 100)}%`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Tension : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'fear' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Fear : ${entry.value.toFixed(2)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Fear : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'anger' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Anger : ${entry.value.toFixed(2)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Anger : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'contempt' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Contempt : ${entry.value.toFixed(2)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Contempt : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'smile' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Smile : ${entry.value.toFixed(2)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Smile : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'audio' && entry.value != null) {
-            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Audio : ${entry.value.toFixed(2)}`}</div>
+            return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Audio : ${formatPercent(entry.value)}`}</div>
           }
           if (entry.dataKey === 'pauseMarker' && entry.value != null) {
             return <div key={index} style={{ color: entry.color, marginTop: 4 }}>{`Pause detected`}</div>
@@ -98,6 +119,7 @@ export default function App() {
   const [sessionTime, setSessionTime] = useState(0)
   const [questionIndex, setQuestionIndex] = useState(0)
   const [reportData, setReportData] = useState(null)
+  const [hiddenReportSeries, setHiddenReportSeries] = useState(DEFAULT_HIDDEN_REPORT_SERIES)
 
   const CALIB_DURATION = 1000
 
@@ -443,6 +465,10 @@ export default function App() {
     ? generateCoachingCards(reportData.sessionData || [], reportData.signalEvents || [])
     : []
 
+  function toggleReportSeries(key) {
+    setHiddenReportSeries(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0f0f0f', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
       {/* SINGLE SOURCE OF TRUTH VIDEO (Hidden) */}
@@ -628,8 +654,8 @@ export default function App() {
 
                 <div style={{ marginBottom: 28 }}>
                   <div style={{ fontSize: 11, color: '#888', letterSpacing: 1, marginBottom: 10 }}>UNIFIED BEHAVIORAL TIMELINE</div>
-                  <div style={{ height: 280, background: '#1a1a1a', borderRadius: 8, border: '1px solid #333', padding: '16px 18px 8px 0' }}>
-                    <ResponsiveContainer width="100%" height={256}>
+                  <div style={{ background: '#1a1a1a', borderRadius: 8, border: '1px solid #333', padding: '16px 18px 14px 0' }}>
+                    <ResponsiveContainer width="100%" height={244}>
                       <ComposedChart data={reportTimeline} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                         <XAxis
@@ -642,24 +668,61 @@ export default function App() {
                           domain={['dataMin', 'dataMax']}
                           tickFormatter={value => formatTime(Math.round(value))}
                         />
-                        <YAxis yAxisId="stress" stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} />
-                        <YAxis yAxisId="signals" orientation="right" stroke="#666" fontSize={10} tickLine={false} axisLine={false} domain={[0, 1]} />
+                        <YAxis
+                          yAxisId="percent"
+                          stroke="#666"
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                          domain={[0, 100]}
+                          tickFormatter={value => `${value}%`}
+                        />
                         <Tooltip content={<CustomTooltip />} />
-                        <Legend wrapperStyle={{ fontSize: 10, color: '#888', paddingTop: 8 }} />
-                        <Line yAxisId="stress" name="Stress" type="monotone" dataKey="stress" stroke="#d2a630" strokeWidth={2.5} dot={false} connectNulls activeDot={{ r: 6, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
-                        <Line yAxisId="signals" name="Facial tension" type="monotone" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls />
-                        <Line yAxisId="signals" name="Fear" type="monotone" dataKey="fear" stroke="#f85149" strokeWidth={1.5} dot={false} connectNulls />
-                        <Line yAxisId="signals" name="Anger" type="monotone" dataKey="anger" stroke="#ff7b72" strokeWidth={1.5} dot={false} connectNulls />
-                        <Line yAxisId="signals" name="Contempt" type="monotone" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.5} dot={false} connectNulls />
-                        <Line yAxisId="signals" name="Smile" type="monotone" dataKey="smile" stroke="#3fb950" strokeWidth={1.5} dot={false} connectNulls />
-                        <Line yAxisId="signals" name="Audio level" type="monotone" dataKey="audio" stroke="#58a6ff" strokeWidth={1.5} strokeDasharray="2 2" dot={false} connectNulls />
-                        <Scatter yAxisId="signals" name="Pause" dataKey="pauseMarker" fill="#fbbf24" shape="circle" />
-                        <Scatter yAxisId="signals" name="Rush" dataKey="rushMarker" fill="#38bdf8" shape="circle" />
-                        <Scatter yAxisId="signals" name="Freeze" dataKey="freezeMarker" fill="#ef4444" shape="circle" />
-                        <Scatter yAxisId="signals" name="Disfluency" dataKey="disfluencyMarker" fill="#22c55e" shape="circle" />
-                        <Scatter yAxisId="signals" name="Tense Disfluency" dataKey="tenseDisfluencyMarker" fill="#ec4899" shape="circle" />
+                        <Line yAxisId="percent" name="Stress" type="monotone" dataKey="stress" stroke="#d2a630" strokeWidth={2.8} dot={false} hide={hiddenReportSeries.stress} connectNulls activeDot={{ r: 5, fill: '#d2a630', stroke: '#111', strokeWidth: 2 }} />
+                        <Line yAxisId="percent" name="Smile" type="monotone" dataKey="smile" stroke="#3fb950" strokeWidth={2} dot={false} hide={hiddenReportSeries.smile} connectNulls strokeOpacity={0.9} />
+                        <Line yAxisId="percent" name="Tension" type="monotone" dataKey="facialTension" stroke="#a371f7" strokeWidth={1.8} strokeDasharray="5 3" dot={false} hide={hiddenReportSeries.facialTension} connectNulls strokeOpacity={0.75} />
+                        <Line yAxisId="percent" name="Fear" type="monotone" dataKey="fear" stroke="#f85149" strokeWidth={1.4} dot={false} hide={hiddenReportSeries.fear} connectNulls strokeOpacity={0.5} />
+                        <Line yAxisId="percent" name="Anger" type="monotone" dataKey="anger" stroke="#ff7b72" strokeWidth={1.4} dot={false} hide={hiddenReportSeries.anger} connectNulls strokeOpacity={0.5} />
+                        <Line yAxisId="percent" name="Contempt" type="monotone" dataKey="contempt" stroke="#79c0ff" strokeWidth={1.4} dot={false} hide={hiddenReportSeries.contempt} connectNulls strokeOpacity={0.5} />
+                        <Line yAxisId="percent" name="Audio" type="monotone" dataKey="audio" stroke="#58a6ff" strokeWidth={1.4} strokeDasharray="2 2" dot={false} hide={hiddenReportSeries.audio} connectNulls strokeOpacity={0.55} />
+                        <Scatter yAxisId="percent" name="Pause" dataKey="pauseMarker" fill="#fbbf24" shape="circle" legendType="none" fillOpacity={0.75} />
+                        <Scatter yAxisId="percent" name="Rush" dataKey="rushMarker" fill="#38bdf8" shape="circle" legendType="none" fillOpacity={0.75} />
+                        <Scatter yAxisId="percent" name="Freeze" dataKey="freezeMarker" fill="#ef4444" shape="circle" legendType="none" fillOpacity={0.75} />
+                        <Scatter yAxisId="percent" name="Disfluency" dataKey="disfluencyMarker" fill="#22c55e" shape="circle" legendType="none" fillOpacity={0.75} />
+                        <Scatter yAxisId="percent" name="Tense Disfluency" dataKey="tenseDisfluencyMarker" fill="#ec4899" shape="circle" legendType="none" fillOpacity={0.75} />
                       </ComposedChart>
                     </ResponsiveContainer>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 18px 0 28px', alignItems: 'center' }}>
+                      {REPORT_SERIES.map(series => {
+                        const hidden = hiddenReportSeries[series.key]
+                        return (
+                          <button
+                            key={series.key}
+                            type="button"
+                            onClick={() => toggleReportSeries(series.key)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '4px 9px',
+                              borderRadius: 6,
+                              border: `1px solid ${hidden ? '#333' : series.color}`,
+                              background: hidden ? '#111' : '#151515',
+                              color: hidden ? '#666' : '#ddd',
+                              fontSize: 11,
+                              cursor: 'pointer',
+                              opacity: hidden ? 0.7 : 1,
+                            }}
+                          >
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: series.color, opacity: hidden ? 0.35 : 1 }} />
+                            {series.label}
+                          </button>
+                        )
+                      })}
+                      <span style={{ marginLeft: 'auto', color: '#666', fontSize: 10 }}>
+                        Event dots sit in the bottom band
+                      </span>
+                    </div>
                   </div>
                 </div>
 
