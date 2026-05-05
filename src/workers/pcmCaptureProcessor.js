@@ -1,6 +1,7 @@
 // AudioWorklet processor — runs on the audio rendering thread.
 // Accumulates mono Float32 PCM and flushes to main thread every FLUSH_FRAMES frames.
 // Import not supported in AudioWorklet scope — keep this file self-contained.
+/* global AudioWorkletProcessor, registerProcessor, sampleRate */
 
 const FLUSH_DURATION_S = 4
 
