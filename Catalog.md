@@ -28,7 +28,4 @@ This application is built using React and Vite. To run it locally on your machin
 5. Open the provided `localhost` URL in your web browser. Note: You must grant Camera and Microphone permissions to use the application.
 
 ## Hosted Demo (If Applicable)
-*(Add your Vercel, Netlify, or GitHub Pages link here if you deployed it online)*
-
-## Additional Materials
-*(Add links to any final demo videos, Milestone 2 videos, or presentation slides here. Ensure they are accessible to anyone with a Georgia Tech account!)*
+*(https://cogniflow-beige.vercel.app/)*
