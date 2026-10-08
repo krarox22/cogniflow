@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local development configuration
+.claude/
+.codex/
+docs/superpowers/
